@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ session.name or ('Session #' ~ session.id) }}</h2>
+<p class="status-text">
+  Start: {{ session.start_time }} &nbsp;|&nbsp;
+  End: {{ session.end_time or '(in progress)' }} &nbsp;|&nbsp;
+  Present: {{ session.present_count }}
+</p>
+
+<div class="toolbar">
+  <a href="{{ url_for('facetrack.history_export', session_id=session.id) }}" class="btn btn-primary">Export to CSV</a>
+  <a href="{{ url_for('facetrack.history') }}" class="btn btn-secondary">Back to sessions</a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Student ID</th>
+      <th>Name</th>
+      <th>Marked At</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in attendance %}
+    <tr>
+      <td>{{ a.student_id }}</td>
+      <td>{{ a.name }}</td>
+      <td>{{ a.timestamp }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No attendance records for this session.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

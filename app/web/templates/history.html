@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Attendance History</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Session</th>
+      <th>Start</th>
+      <th>End</th>
+      <th>Present</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in sessions %}
+    <tr class="clickable" onclick="window.location='{{ url_for('facetrack.history_detail', session_id=s.id) }}'">
+      <td>{{ s.name or ('Session #' ~ s.id) }}</td>
+      <td>{{ s.start_time }}</td>
+      <td>{{ s.end_time or '(in progress)' }}</td>
+      <td>{{ s.present_count }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No sessions recorded yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

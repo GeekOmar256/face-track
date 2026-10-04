@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Attendance Session</h2>
+<p class="status-text" id="session-label">No active session</p>
+
+<button id="start-btn" class="btn btn-success">Start Session</button>
+<button id="stop-btn" class="btn btn-danger" disabled>End Session</button>
+
+<div class="session-layout">
+  <div class="video-box" id="video-box">
+    <span class="video-placeholder">Camera preview will appear here</span>
+  </div>
+  <div class="log-panel">
+    <h3>Present this session</h3>
+    <ul class="log-list" id="log-list"></ul>
+  </div>
+</div>
+
+<script>
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const videoBox = document.getElementById('video-box');
+const logList = document.getElementById('log-list');
+const sessionLabel = document.getElementById('session-label');
+
+let polling = null;
+let loggedCount = 0;
+
+function showVideo(show) {
+  videoBox.innerHTML = show
+    ? '<img src="/video_feed?t=' + Date.now() + '">'
+    : '<span class="video-placeholder">Camera preview will appear here</span>';
+}
+
+startBtn.addEventListener('click', async () => {
+  const res = await fetch('/session/start', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) {
+    sessionLabel.textContent = data.error || 'Could not start session.';
+    return;
+  }
+
+  logList.innerHTML = '';
+  loggedCount = 0;
+  sessionLabel.textContent = `Session #${data.session_id} - recording`;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  showVideo(true);
+  polling = setInterval(poll, 1000);
+});
+
+stopBtn.addEventListener('click', async () => {
+  const res = await fetch('/session/stop', { method: 'POST' });
+  const data = await res.json();
+  sessionLabel.textContent = `Session #${data.session_id} ended - ${data.present_count} present`;
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  showVideo(false);
+  if (polling) { clearInterval(polling); polling = null; }
+});
+
+async function poll() {
+  const res = await fetch('/session/status');
+  const s = await res.json();
+  for (let i = loggedCount; i < s.log.length; i++) {
+    const entry = s.log[i];
+    const li = document.createElement('li');
+    li.textContent = `${entry.time}  ${entry.name}  (ID ${entry.student_id})`;
+    logList.appendChild(li);
+  }
+  loggedCount = s.log.length;
+  logList.scrollTop = logList.scrollHeight;
+}
+</script>
+{% endblock %}

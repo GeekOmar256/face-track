@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Face Track</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <h1>Face Track</h1>
+      <a href="{{ url_for('facetrack.dashboard') }}" class="{{ 'active' if active=='dashboard' else '' }}">Dashboard</a>
+      <a href="{{ url_for('facetrack.add_student') }}" class="{{ 'active' if active=='add_student' else '' }}">Add Student</a>
+      <a href="{{ url_for('facetrack.session_page') }}" class="{{ 'active' if active=='session' else '' }}">Start Session</a>
+      <a href="{{ url_for('facetrack.students') }}" class="{{ 'active' if active=='students' else '' }}">Student List</a>
+      <a href="{{ url_for('facetrack.history') }}" class="{{ 'active' if active=='history' else '' }}">Attendance History</a>
+    </nav>
+    <main class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-area">
+            {% for category, msg in messages %}
+              <div class="flash flash-{{ category }}">{{ msg }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

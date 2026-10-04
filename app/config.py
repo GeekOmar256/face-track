@@ -17,9 +17,7 @@ FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 
 # Enrollment
-SAMPLES_PER_STUDENT = 40
 FACE_IMG_SIZE = (200, 200)
-CAPTURE_INTERVAL_MS = 150  # minimum time between saved samples, for variety
 
 # Detection. YuNet score is a confidence in [0, 1]: higher = more certain it's a face.
 DETECTION_SCORE_THRESHOLD = 0.7

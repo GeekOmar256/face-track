@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Add Student</h2>
+
+<form id="enroll-form">
+  <div class="form-row">
+    <label for="student_id">Student ID</label>
+    <input type="text" id="student_id" name="student_id" autocomplete="off">
+  </div>
+  <div class="form-row">
+    <label for="name">Full Name</label>
+    <input type="text" id="name" name="name" autocomplete="off">
+  </div>
+
+  <button type="submit" id="start-btn" class="btn btn-primary">Start Capture</button>
+  <button type="button" id="capture-btn" class="btn btn-success" disabled>Capture Photo</button>
+  <button type="button" id="finish-btn" class="btn btn-primary" disabled>Finish Enrollment</button>
+  <button type="button" id="cancel-btn" class="btn btn-danger" disabled>Cancel</button>
+</form>
+
+<div class="status-text" id="status-text"></div>
+
+<div class="video-box" id="video-box">
+  <span class="video-placeholder">Camera preview will appear here</span>
+</div>
+
+<script>
+const form = document.getElementById('enroll-form');
+const startBtn = document.getElementById('start-btn');
+const captureBtn = document.getElementById('capture-btn');
+const finishBtn = document.getElementById('finish-btn');
+const cancelBtn = document.getElementById('cancel-btn');
+const statusText = document.getElementById('status-text');
+const videoBox = document.getElementById('video-box');
+const idInput = document.getElementById('student_id');
+const nameInput = document.getElementById('name');
+
+let polling = null;
+let photoCount = 0;
+
+function setStage(stage) {
+  // stage: 'form' | 'capturing' | 'finishing'
+  idInput.disabled = stage !== 'form';
+  nameInput.disabled = stage !== 'form';
+  startBtn.disabled = stage !== 'form';
+  captureBtn.disabled = stage !== 'capturing';
+  finishBtn.disabled = stage !== 'capturing' || photoCount < 1;
+  cancelBtn.disabled = stage === 'form';
+}
+
+function showVideo(show) {
+  videoBox.innerHTML = show
+    ? '<img src="/video_feed?t=' + Date.now() + '">'
+    : '<span class="video-placeholder">Camera preview will appear here</span>';
+}
+
+function resetUI() {
+  photoCount = 0;
+  setStage('form');
+  showVideo(false);
+  if (polling) { clearInterval(polling); polling = null; }
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = { student_id: idInput.value.trim(), name: nameInput.value.trim() };
+  if (!payload.student_id || !payload.name) {
+    statusText.textContent = 'Please enter both Student ID and Name.';
+    return;
+  }
+
+  const res = await fetch('/add-student/start', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    statusText.textContent = data.error || 'Could not start capture.';
+    return;
+  }
+
+  photoCount = 0;
+  setStage('capturing');
+  showVideo(true);
+  statusText.textContent = 'Face the camera, then click "Capture Photo". Click it again for each extra angle you want.';
+});
+
+captureBtn.addEventListener('click', async () => {
+  const res = await fetch('/add-student/capture', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) {
+    statusText.textContent = data.error || 'Could not capture a photo.';
+    return;
+  }
+  photoCount = data.count;
+  finishBtn.disabled = photoCount < 1;
+  statusText.textContent = `${photoCount} photo${photoCount === 1 ? '' : 's'} captured. Capture more or click Finish.`;
+});
+
+finishBtn.addEventListener('click', async () => {
+  const res = await fetch('/add-student/finish', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) {
+    statusText.textContent = data.error || 'Could not finish enrollment.';
+    return;
+  }
+  showVideo(false);
+  setStage('finishing');
+  statusText.textContent = 'Training recognition model...';
+  polling = setInterval(poll, 500);
+});
+
+cancelBtn.addEventListener('click', async () => {
+  await fetch('/add-student/cancel', { method: 'POST' });
+  statusText.textContent = 'Capture cancelled.';
+  resetUI();
+  idInput.value = '';
+  nameInput.value = '';
+});
+
+async function poll() {
+  const res = await fetch('/add-student/status');
+  const s = await res.json();
+  if (s.enroll_complete) {
+    statusText.textContent = `Student enrolled and model trained successfully (${s.enroll_count} photo${s.enroll_count === 1 ? '' : 's'}).`;
+    resetUI();
+    idInput.value = '';
+    nameInput.value = '';
+  }
+}
+</script>
+{% endblock %}

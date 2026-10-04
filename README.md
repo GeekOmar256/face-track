@@ -1,10 +1,13 @@
 # Face Track - Face Recognition Attendance System
 
-A Tkinter desktop app for Raspberry Pi (also runs on Windows/macOS/Linux for
-development) that takes attendance by recognizing students' faces.
+A Flask web app for Raspberry Pi (also runs on Windows/macOS/Linux for
+development) that takes attendance by recognizing students' faces. The
+camera is attached to the Pi; the admin UI runs in a regular web browser -
+on the Pi's own screen, or remotely from any device on the same network.
 
-- **Add Student** - enter ID + name, capture ~40 face photos from the camera,
-  automatically trains the recognition model.
+- **Add Student** - enter ID + name, then click **Capture Photo** to take
+  one photo at a time from the live preview (click it again for more
+  angles), and **Finish Enrollment** to save and train the model.
 - **Start Session** - opens the camera and continuously recognizes faces;
   each recognized student is marked present **once** per session (duplicate
   recognitions in the same session are ignored).
@@ -23,10 +26,13 @@ Detection uses OpenCV's **YuNet** (`cv2.FaceDetectorYN`), a small ONNX DNN
 from OpenCV Zoo bundled in `app/models/face_detection_yunet_2023mar.onnx`;
 recognition uses OpenCV's **LBPH** (`cv2.face.LBPHFaceRecognizer`). This
 combo was chosen over `dlib` / `face_recognition` because dlib is slow and
-often painful to build from source on a Raspberry Pi. YuNet in particular
-replaced an earlier Haar-cascade detector because it handles angled faces,
-partial occlusion and uneven lighting far more reliably, while still
-running comfortably on a Pi CPU with no GPU required.
+often painful to build from source on a Raspberry Pi. YuNet handles angled
+faces, partial occlusion and uneven lighting far more reliably than a Haar
+cascade, while still running comfortably on a Pi CPU with no GPU required.
+
+The camera itself is owned by the server (the Pi), not the browser: only
+the admin UI is remote, the live video is captured and processed on the Pi
+and streamed to the browser as an MJPEG feed.
 
 ## Setup - development machine (Windows/macOS/Linux)
 
@@ -39,6 +45,8 @@ pip install -r requirements.txt
 python main.py
 ```
 
+Then open http://localhost:5000 in a browser.
+
 ## Setup - Raspberry Pi (Raspberry Pi OS, Bookworm/Bullseye)
 
 1. System packages (OpenCV's Python wheel on ARM can be slow to build from
@@ -46,16 +54,23 @@ python main.py
 
    ```bash
    sudo apt update
-   sudo apt install -y python3-opencv python3-pil python3-pil.imagetk python3-tk python3-pip
+   sudo apt install -y python3-opencv python3-pip
    ```
 
-   If `python3-opencv` on your Pi OS version doesn't include the `cv2.face`
-   module, install the contrib wheel via pip instead inside a venv:
+   Check that your OpenCV build includes the contrib `face` module and the
+   YuNet DNN detector:
+
+   ```bash
+   python3 -c "import cv2; print(hasattr(cv2,'face'), hasattr(cv2,'FaceDetectorYN_create'))"
+   ```
+
+   If either prints `False`, install the contrib wheel via pip instead
+   inside a venv:
 
    ```bash
    python3 -m venv venv --system-site-packages
    source venv/bin/activate
-   pip install opencv-contrib-python Pillow numpy
+   pip install -r requirements.txt
    ```
 
 2. Camera:
@@ -78,14 +93,54 @@ python main.py
    python3 main.py
    ```
 
-   For a touchscreen/kiosk setup, you can autostart this with a `.desktop`
-   entry or a systemd user service pointed at `python3 main.py`.
+   This starts a web server on port 5000. Open `http://<pi-ip-address>:5000`
+   from any browser on the same network, or `http://localhost:5000` if
+   you're using a browser on the Pi itself. Find the Pi's address with
+   `hostname -I`.
+
+   Unlike a desktop GUI app, this does **not** need an X session or
+   `$DISPLAY` to run - it's fine over a plain SSH connection with no X
+   forwarding, since nothing is drawn locally on the Pi.
+
+### Optional: kiosk mode on the Pi's own screen
+
+If the Pi has a monitor attached and you want it to boot straight into the
+attendance UI full-screen:
+
+```bash
+chromium-browser --noerrdialogs --kiosk http://localhost:5000
+```
+
+### Optional: run on boot with systemd
+
+Create `/etc/systemd/system/facetrack.service`:
+
+```ini
+[Unit]
+Description=Face Track Attendance System
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/face-track/main.py
+WorkingDirectory=/home/pi/face-track
+User=pi
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then:
+
+```bash
+sudo systemctl enable facetrack.service
+sudo systemctl start facetrack.service
+```
 
 ## Tuning
 
 Edit `app/config.py`:
 
-- `SAMPLES_PER_STUDENT` - number of photos captured per student (default 40).
 - `DETECTION_SCORE_THRESHOLD` - YuNet confidence threshold; **higher value =
   stricter match** (default 0.7). Lower it if faces aren't being detected;
   raise it if it's picking up false positives.
@@ -95,10 +150,14 @@ Edit `app/config.py`:
   (e.g. 80-90).
 - `CAMERA_INDEX`, `FRAME_WIDTH`, `FRAME_HEIGHT` - camera settings.
 
+There's no fixed photo count per student - capture as many as you like
+during enrollment (at least one is required). More photos from different
+angles generally improve recognition accuracy.
+
 ## Project layout
 
 ```
-main.py                     entry point
+main.py                     entry point - starts the Flask server
 app/
   config.py                 paths & tunables
   database.py                SQLite access (students, sessions, attendance)
@@ -106,12 +165,11 @@ app/
   face_engine.py              YuNet detection + LBPH train/recognize
   models/
     face_detection_yunet_2023mar.onnx  bundled YuNet detector weights
-  gui/
-    main_window.py            sidebar nav + frame switching
-    dashboard_view.py
-    add_student_view.py       enrollment + capture + auto-train
-    session_view.py            live recognition + mark-once-per-session
-    student_list_view.py
-    history_view.py            session history + CSV export
+  web/
+    __init__.py                Flask app factory
+    worker.py                  background camera worker (enroll / session state machine, MJPEG frames)
+    routes.py                  HTTP routes
+    templates/                  Jinja2 pages (dashboard, add student, session, students, history)
+    static/style.css
 data/                        created at runtime (db, dataset, trained model)
 ```

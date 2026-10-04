@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Face Track</h2>
+<p>Face-recognition attendance system</p>
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="label">Registered students</div>
+    <div class="value">{{ student_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Sessions recorded</div>
+    <div class="value">{{ session_count }}</div>
+  </div>
+</div>
+{% endblock %}
