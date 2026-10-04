@@ -124,9 +124,9 @@ class AddStudentView(tk.Frame):
             return
 
         frame = cv2.flip(frame, 1)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.controller.face_engine.detect_faces(gray)
+        faces = self.controller.face_engine.detect_faces(frame)
         face = self.controller.face_engine.largest_face(faces)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         if face is not None:
             x, y, w, h = face

@@ -19,11 +19,14 @@ Data is stored in SQLite (`data/attendance.db`). Face photos live in
 
 ## How recognition works
 
-Detection uses OpenCV's Haar cascade; recognition uses OpenCV's LBPH
-(`cv2.face.LBPHFaceRecognizer`). This combo was chosen over `dlib` /
-`face_recognition` because dlib is slow and often painful to build from
-source on a Raspberry Pi, whereas LBPH is lightweight and ships inside
-`opencv-contrib-python`.
+Detection uses OpenCV's **YuNet** (`cv2.FaceDetectorYN`), a small ONNX DNN
+from OpenCV Zoo bundled in `app/models/face_detection_yunet_2023mar.onnx`;
+recognition uses OpenCV's **LBPH** (`cv2.face.LBPHFaceRecognizer`). This
+combo was chosen over `dlib` / `face_recognition` because dlib is slow and
+often painful to build from source on a Raspberry Pi. YuNet in particular
+replaced an earlier Haar-cascade detector because it handles angled faces,
+partial occlusion and uneven lighting far more reliably, while still
+running comfortably on a Pi CPU with no GPU required.
 
 ## Setup - development machine (Windows/macOS/Linux)
 
@@ -83,6 +86,9 @@ python main.py
 Edit `app/config.py`:
 
 - `SAMPLES_PER_STUDENT` - number of photos captured per student (default 40).
+- `DETECTION_SCORE_THRESHOLD` - YuNet confidence threshold; **higher value =
+  stricter match** (default 0.7). Lower it if faces aren't being detected;
+  raise it if it's picking up false positives.
 - `RECOGNITION_CONFIDENCE_THRESHOLD` - LBPH distance threshold; **lower
   value = stricter match**. If the system misidentifies people, lower this
   (e.g. 55-60). If it fails to recognize enrolled students, raise it
@@ -97,7 +103,9 @@ app/
   config.py                 paths & tunables
   database.py                SQLite access (students, sessions, attendance)
   camera.py                  cv2.VideoCapture wrapper
-  face_engine.py              Haar detection + LBPH train/recognize
+  face_engine.py              YuNet detection + LBPH train/recognize
+  models/
+    face_detection_yunet_2023mar.onnx  bundled YuNet detector weights
   gui/
     main_window.py            sidebar nav + frame switching
     dashboard_view.py

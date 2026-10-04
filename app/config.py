@@ -1,6 +1,5 @@
 """Central configuration and filesystem paths for Face Track."""
 import os
-import cv2
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -9,7 +8,8 @@ TRAINER_DIR = os.path.join(DATA_DIR, "trainer")
 TRAINER_FILE = os.path.join(TRAINER_DIR, "trainer.yml")
 DB_PATH = os.path.join(DATA_DIR, "attendance.db")
 
-CASCADE_PATH = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
+MODELS_DIR = os.path.join(BASE_DIR, "app", "models")
+YUNET_MODEL_PATH = os.path.join(MODELS_DIR, "face_detection_yunet_2023mar.onnx")
 
 # Camera: 0 is usually the first USB webcam / the Pi camera exposed via V4L2.
 CAMERA_INDEX = 0
@@ -20,6 +20,9 @@ FRAME_HEIGHT = 480
 SAMPLES_PER_STUDENT = 40
 FACE_IMG_SIZE = (200, 200)
 CAPTURE_INTERVAL_MS = 150  # minimum time between saved samples, for variety
+
+# Detection. YuNet score is a confidence in [0, 1]: higher = more certain it's a face.
+DETECTION_SCORE_THRESHOLD = 0.7
 
 # Recognition. LBPH confidence is a DISTANCE: lower = better match.
 RECOGNITION_CONFIDENCE_THRESHOLD = 70

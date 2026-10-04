@@ -122,7 +122,7 @@ class SessionView(tk.Frame):
 
         frame = cv2.flip(frame, 1)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.controller.face_engine.detect_faces(gray)
+        faces = self.controller.face_engine.detect_faces(frame)
 
         for (x, y, w, h) in faces:
             label, confidence = self.controller.face_engine.predict(gray[y:y + h, x:x + w])

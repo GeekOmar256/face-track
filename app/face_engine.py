@@ -1,8 +1,11 @@
 """Face detection, dataset capture and LBPH recognition.
 
-Uses OpenCV's Haar cascade for detection and the LBPH recognizer for
-recognition. Both run comfortably on a Raspberry Pi without needing dlib /
-the `face_recognition` package, which are slow to build on Pi hardware.
+Uses OpenCV's YuNet (a small ONNX DNN, via cv2.FaceDetectorYN) for
+detection and the LBPH recognizer for recognition. Both run comfortably on
+a Raspberry Pi without needing dlib / the `face_recognition` package,
+which are slow to build on Pi hardware. YuNet replaced an earlier Haar
+cascade here because it handles angled/partially-occluded faces and
+varied lighting far more reliably.
 """
 import os
 import shutil
@@ -15,9 +18,15 @@ from . import config
 
 class FaceEngine:
     def __init__(self):
-        self.detector = cv2.CascadeClassifier(config.CASCADE_PATH)
-        if self.detector.empty():
-            raise RuntimeError(f"Could not load Haar cascade from {config.CASCADE_PATH}")
+        if not os.path.isfile(config.YUNET_MODEL_PATH):
+            raise RuntimeError(f"Could not find YuNet model at {config.YUNET_MODEL_PATH}")
+        self.detector = cv2.FaceDetectorYN_create(
+            config.YUNET_MODEL_PATH,
+            "",
+            (config.FRAME_WIDTH, config.FRAME_HEIGHT),
+            score_threshold=config.DETECTION_SCORE_THRESHOLD,
+        )
+        self._detector_size = (config.FRAME_WIDTH, config.FRAME_HEIGHT)
         self.recognizer = cv2.face.LBPHFaceRecognizer_create()
         self.model_loaded = False
         self.load_model()
@@ -86,13 +95,31 @@ class FaceEngine:
             shutil.rmtree(path)
 
     # --------------------------------------------------------------- runtime
-    def detect_faces(self, gray_frame):
-        return self.detector.detectMultiScale(
-            gray_frame, scaleFactor=1.2, minNeighbors=5, minSize=(80, 80)
-        )
+    def detect_faces(self, bgr_frame):
+        """Detect faces in a BGR frame. Returns a list of (x, y, w, h) ints,
+        clipped to the frame bounds."""
+        h, w = bgr_frame.shape[:2]
+        if (w, h) != self._detector_size:
+            self.detector.setInputSize((w, h))
+            self._detector_size = (w, h)
+
+        _, raw_faces = self.detector.detect(bgr_frame)
+        if raw_faces is None:
+            return []
+
+        boxes = []
+        for f in raw_faces:
+            x, y, bw, bh = f[:4]
+            x = max(0, int(round(x)))
+            y = max(0, int(round(y)))
+            x2 = min(w, x + int(round(bw)))
+            y2 = min(h, y + int(round(bh)))
+            if x2 > x and y2 > y:
+                boxes.append((x, y, x2 - x, y2 - y))
+        return boxes
 
     def largest_face(self, faces):
-        if len(faces) == 0:
+        if not faces:
             return None
         return max(faces, key=lambda f: f[2] * f[3])
 
