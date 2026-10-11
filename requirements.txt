@@ -1,3 +1,12 @@
 opencv-contrib-python==4.10.0.84
 numpy>=1.23
 Flask>=3.0
+
+# RC522 RFID reader support. Only installable/usable on the Pi itself (needs
+# SPI + GPIO hardware); these markers skip them on Windows/macOS dev
+# machines so `pip install -r requirements.txt` still works there. The app
+# runs fine without them too - app/rfid.py falls back to a "simulate a
+# scan" UI when this hardware isn't present.
+mfrc522; sys_platform == "linux" and (platform_machine == "armv7l" or platform_machine == "aarch64")
+spidev; sys_platform == "linux" and (platform_machine == "armv7l" or platform_machine == "aarch64")
+RPi.GPIO; sys_platform == "linux" and (platform_machine == "armv7l" or platform_machine == "aarch64")

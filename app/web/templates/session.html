@@ -12,6 +12,14 @@
   </div>
   <div class="log-panel">
     <h3>Present this session</h3>
+    <div id="rfid-indicator" class="rfid-waiting" style="display:none;">
+      <span class="rfid-dot listening"></span>
+      <span>Listening for RFID cards - tap one anytime</span>
+    </div>
+    <div id="rfid-simulate" class="rfid-simulate" style="display:none;">
+      <input type="text" id="rfid-sim-input" placeholder="No reader detected - type a fake UID to test">
+      <button type="button" id="rfid-sim-btn" class="btn btn-secondary">Simulate Scan</button>
+    </div>
     <ul class="log-list" id="log-list"></ul>
   </div>
 </div>
@@ -22,9 +30,18 @@ const stopBtn = document.getElementById('stop-btn');
 const videoBox = document.getElementById('video-box');
 const logList = document.getElementById('log-list');
 const sessionLabel = document.getElementById('session-label');
+const rfidIndicator = document.getElementById('rfid-indicator');
+const rfidSimulate = document.getElementById('rfid-simulate');
+const rfidSimInput = document.getElementById('rfid-sim-input');
+const rfidSimBtn = document.getElementById('rfid-sim-btn');
 
 let polling = null;
 let loggedCount = 0;
+let hardwareAvailable = true;
+
+fetch('/rfid/hardware').then(r => r.json()).then(d => {
+  hardwareAvailable = d.hardware_available;
+});
 
 function showVideo(show) {
   videoBox.innerHTML = show
@@ -46,6 +63,8 @@ startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
   stopBtn.disabled = false;
   showVideo(true);
+  rfidIndicator.style.display = 'flex';
+  if (!hardwareAvailable) rfidSimulate.style.display = 'flex';
   polling = setInterval(poll, 1000);
 });
 
@@ -56,7 +75,19 @@ stopBtn.addEventListener('click', async () => {
   startBtn.disabled = false;
   stopBtn.disabled = true;
   showVideo(false);
+  rfidIndicator.style.display = 'none';
+  rfidSimulate.style.display = 'none';
   if (polling) { clearInterval(polling); polling = null; }
+});
+
+rfidSimBtn.addEventListener('click', async () => {
+  const uid = rfidSimInput.value.trim();
+  if (!uid) return;
+  await fetch('/rfid/simulate', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ uid }),
+  });
+  rfidSimInput.value = '';
 });
 
 async function poll() {
@@ -65,7 +96,16 @@ async function poll() {
   for (let i = loggedCount; i < s.log.length; i++) {
     const entry = s.log[i];
     const li = document.createElement('li');
-    li.textContent = `${entry.time}  ${entry.name}  (ID ${entry.student_id})`;
+
+    const strong = document.createElement('strong');
+    strong.textContent = entry.name;
+
+    const badge = document.createElement('span');
+    const isRfid = entry.method === 'rfid';
+    badge.className = 'badge ' + (isRfid ? 'badge-rfid' : 'badge-face');
+    badge.textContent = isRfid ? 'RFID' : 'Face';
+
+    li.append(entry.time + '  ', strong, ` (ID ${entry.student_id}) `, badge);
     logList.appendChild(li);
   }
   loggedCount = s.log.length;

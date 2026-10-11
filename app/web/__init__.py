@@ -4,6 +4,7 @@ import os
 from flask import Flask
 
 from .worker import CameraWorker
+from .rfid_worker import RFIDWorker
 
 
 def create_app(db, face_engine):
@@ -20,6 +21,7 @@ def create_app(db, face_engine):
     app.config["DB"] = db
     app.config["FACE_ENGINE"] = face_engine
     app.config["WORKER"] = CameraWorker(db, face_engine)
+    app.config["RFID_WORKER"] = RFIDWorker()
 
     from .routes import bp
     app.register_blueprint(bp)

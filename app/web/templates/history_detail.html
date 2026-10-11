@@ -18,6 +18,7 @@
       <th>Student ID</th>
       <th>Name</th>
       <th>Marked At</th>
+      <th>Method</th>
     </tr>
   </thead>
   <tbody>
@@ -26,9 +27,10 @@
       <td>{{ a.student_id }}</td>
       <td>{{ a.name }}</td>
       <td>{{ a.timestamp }}</td>
+      <td><span class="badge {{ 'badge-rfid' if a.method == 'rfid' else 'badge-face' }}">{{ 'RFID' if a.method == 'rfid' else 'Face' }}</span></td>
     </tr>
     {% else %}
-    <tr><td colspan="3">No attendance records for this session.</td></tr>
+    <tr><td colspan="4">No attendance records for this session.</td></tr>
     {% endfor %}
   </tbody>
 </table>

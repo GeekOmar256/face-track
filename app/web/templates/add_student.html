@@ -24,6 +24,26 @@
   <span class="video-placeholder">Camera preview will appear here</span>
 </div>
 
+<div class="rfid-panel">
+  <h3>RFID Card</h3>
+  <div class="hint">Optional - link a card so this student can also check in by tapping it instead of (or in addition to) face recognition.</div>
+
+  <button type="button" id="rfid-scan-btn" class="btn btn-primary" disabled>Scan Card</button>
+  <button type="button" id="rfid-cancel-btn" class="btn btn-secondary" style="display:none;">Cancel Scan</button>
+  <button type="button" id="rfid-clear-btn" class="btn btn-danger" style="display:none;">Remove Card</button>
+
+  <div id="rfid-waiting" class="rfid-waiting" style="display:none;">
+    <span class="rfid-dot"></span>
+    <span>Waiting for card scan...</span>
+  </div>
+  <div id="rfid-result" class="rfid-result"></div>
+
+  <div id="rfid-simulate" class="rfid-simulate" style="display:none;">
+    <input type="text" id="rfid-sim-input" placeholder="No reader detected - type a fake UID to test">
+    <button type="button" id="rfid-sim-btn" class="btn btn-secondary">Simulate Scan</button>
+  </div>
+</div>
+
 <script>
 const form = document.getElementById('enroll-form');
 const startBtn = document.getElementById('start-btn');
@@ -35,8 +55,23 @@ const videoBox = document.getElementById('video-box');
 const idInput = document.getElementById('student_id');
 const nameInput = document.getElementById('name');
 
+const rfidScanBtn = document.getElementById('rfid-scan-btn');
+const rfidCancelBtn = document.getElementById('rfid-cancel-btn');
+const rfidClearBtn = document.getElementById('rfid-clear-btn');
+const rfidWaiting = document.getElementById('rfid-waiting');
+const rfidResult = document.getElementById('rfid-result');
+const rfidSimulate = document.getElementById('rfid-simulate');
+const rfidSimInput = document.getElementById('rfid-sim-input');
+const rfidSimBtn = document.getElementById('rfid-sim-btn');
+
 let polling = null;
+let rfidPolling = null;
 let photoCount = 0;
+let rfidLinked = false;
+
+fetch('/rfid/hardware').then(r => r.json()).then(d => {
+  if (!d.hardware_available) rfidSimulate.style.display = 'flex';
+});
 
 function setStage(stage) {
   // stage: 'form' | 'capturing' | 'finishing'
@@ -44,8 +79,9 @@ function setStage(stage) {
   nameInput.disabled = stage !== 'form';
   startBtn.disabled = stage !== 'form';
   captureBtn.disabled = stage !== 'capturing';
-  finishBtn.disabled = stage !== 'capturing' || photoCount < 1;
+  finishBtn.disabled = stage !== 'capturing' || (photoCount < 1 && !rfidLinked);
   cancelBtn.disabled = stage === 'form';
+  rfidScanBtn.disabled = stage !== 'capturing';
 }
 
 function showVideo(show) {
@@ -54,10 +90,21 @@ function showVideo(show) {
     : '<span class="video-placeholder">Camera preview will appear here</span>';
 }
 
+function resetRfidPanel() {
+  rfidLinked = false;
+  rfidWaiting.style.display = 'none';
+  rfidResult.className = 'rfid-result';
+  rfidResult.textContent = '';
+  rfidCancelBtn.style.display = 'none';
+  rfidClearBtn.style.display = 'none';
+  if (rfidPolling) { clearInterval(rfidPolling); rfidPolling = null; }
+}
+
 function resetUI() {
   photoCount = 0;
   setStage('form');
   showVideo(false);
+  resetRfidPanel();
   if (polling) { clearInterval(polling); polling = null; }
 }
 
@@ -93,7 +140,7 @@ captureBtn.addEventListener('click', async () => {
     return;
   }
   photoCount = data.count;
-  finishBtn.disabled = photoCount < 1;
+  finishBtn.disabled = photoCount < 1 && !rfidLinked;
   statusText.textContent = `${photoCount} photo${photoCount === 1 ? '' : 's'} captured. Capture more or click Finish.`;
 });
 
@@ -126,6 +173,78 @@ async function poll() {
     resetUI();
     idInput.value = '';
     nameInput.value = '';
+  }
+}
+
+// ----------------------------------------------------------------- RFID
+rfidScanBtn.addEventListener('click', async () => {
+  rfidResult.className = 'rfid-result';
+  rfidResult.textContent = '';
+  const res = await fetch('/add-student/rfid/start', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) {
+    rfidResult.className = 'rfid-result error';
+    rfidResult.textContent = data.error || 'Could not start scanning.';
+    return;
+  }
+  rfidWaiting.style.display = 'flex';
+  rfidScanBtn.style.display = 'none';
+  rfidCancelBtn.style.display = 'inline-block';
+  rfidPolling = setInterval(pollRfid, 500);
+});
+
+rfidCancelBtn.addEventListener('click', async () => {
+  await fetch('/add-student/rfid/cancel', { method: 'POST' });
+  rfidWaiting.style.display = 'none';
+  rfidScanBtn.style.display = 'inline-block';
+  rfidCancelBtn.style.display = 'none';
+  if (rfidPolling) { clearInterval(rfidPolling); rfidPolling = null; }
+});
+
+rfidClearBtn.addEventListener('click', async () => {
+  const res = await fetch('/add-student/rfid/clear', { method: 'POST' });
+  if (res.ok) {
+    resetRfidPanel();
+    rfidScanBtn.style.display = 'inline-block';
+    finishBtn.disabled = photoCount < 1 && !rfidLinked;
+  }
+});
+
+rfidSimBtn.addEventListener('click', async () => {
+  const uid = rfidSimInput.value.trim();
+  if (!uid) return;
+  await fetch('/rfid/simulate', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ uid }),
+  });
+  rfidSimInput.value = '';
+});
+
+async function pollRfid() {
+  const res = await fetch('/add-student/rfid/status');
+  const s = await res.json();
+
+  if (s.scanned_uid) {
+    rfidLinked = true;
+    rfidWaiting.style.display = 'none';
+    rfidCancelBtn.style.display = 'none';
+    rfidScanBtn.style.display = 'none';
+    rfidClearBtn.style.display = 'inline-block';
+    rfidResult.className = 'rfid-result success';
+    rfidResult.textContent = '';
+    const uidSpan = document.createElement('span');
+    uidSpan.className = 'rfid-uid';
+    uidSpan.textContent = s.scanned_uid;
+    rfidResult.append('Card linked: ', uidSpan);
+    finishBtn.disabled = photoCount < 1 && !rfidLinked;
+    if (rfidPolling) { clearInterval(rfidPolling); rfidPolling = null; }
+  } else if (s.scan_error) {
+    rfidWaiting.style.display = 'none';
+    rfidCancelBtn.style.display = 'none';
+    rfidScanBtn.style.display = 'inline-block';
+    rfidResult.className = 'rfid-result error';
+    rfidResult.textContent = s.scan_error;
+    if (rfidPolling) { clearInterval(rfidPolling); rfidPolling = null; }
   }
 }
 </script>

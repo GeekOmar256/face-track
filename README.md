@@ -7,18 +7,23 @@ on the Pi's own screen, or remotely from any device on the same network.
 
 - **Add Student** - enter ID + name, then click **Capture Photo** to take
   one photo at a time from the live preview (click it again for more
-  angles), and **Finish Enrollment** to save and train the model.
-- **Start Session** - opens the camera and continuously recognizes faces;
-  each recognized student is marked present **once** per session (duplicate
-  recognitions in the same session are ignored).
+  angles), and optionally **Scan Card** to link an RC522 RFID card to the
+  student. **Finish Enrollment** saves and trains the model once at least
+  one photo or a card is set.
+- **Start Session** - opens the camera and continuously recognizes faces,
+  *and* listens for RFID cards at the same time; a student can check in
+  with either. Each student is marked present **once** per session
+  (duplicate recognitions/taps in the same session are ignored).
 - **Student List** - view/delete enrolled students (deleting retrains the
   model automatically).
 - **Attendance History** - browse past sessions, see who attended and when,
   export a session to CSV.
 
-Data is stored in SQLite (`data/attendance.db`). Face photos live in
-`data/dataset/<student_pk>/`, and the trained model in
-`data/trainer/trainer.yml`.
+Data is stored in SQLite (`data/attendance.db`) - students, sessions, and
+attendance rows (each tagged with how the student checked in: `face` or
+`rfid`). Face photos live in `data/dataset/<student_pk>/`, and the trained
+model in `data/trainer/trainer.yml`. Existing databases are migrated
+automatically on startup when upgrading from a version before RFID support.
 
 ## How recognition works
 
@@ -33,6 +38,47 @@ cascade, while still running comfortably on a Pi CPU with no GPU required.
 The camera itself is owned by the server (the Pi), not the browser: only
 the admin UI is remote, the live video is captured and processed on the Pi
 and streamed to the browser as an MJPEG feed.
+
+## RFID card reader (RC522)
+
+An RC522 module can be wired to the Pi's SPI header so students can also
+(or instead) check in by tapping a card. It's read via the `mfrc522`
+Python package.
+
+### Wiring (RC522 -> Raspberry Pi 40-pin header)
+
+| RC522 pin | Pi pin           |
+|-----------|------------------|
+| SDA (SS)  | GPIO8 / CE0 (pin 24) |
+| SCK       | GPIO11 / SCLK (pin 23) |
+| MOSI      | GPIO10 / MOSI (pin 19) |
+| MISO      | GPIO9 / MISO (pin 21) |
+| IRQ       | not connected |
+| GND       | GND (pin 6)      |
+| RST       | GPIO25 (pin 22)  |
+| 3.3V      | 3.3V (pin 1) - **not** 5V, the RC522 is 3.3V-only |
+
+### Setup
+
+1. Enable SPI:
+   ```bash
+   sudo raspi-config  # Interface Options -> SPI -> Enable
+   sudo reboot
+   ```
+2. Install the Python packages (already in `requirements.txt`, auto-skipped
+   on non-Pi machines via environment markers):
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Run the app as usual. On startup it checks the reader; the `/rfid/hardware`
+   status is visible in the Add Student and Session pages.
+
+### No reader attached yet?
+
+The app doesn't require the RC522 to run - `app/rfid.py` falls back to a
+reader that never sees a card, and both the Add Student and Session pages
+then show a **"Simulate Scan"** text box so you can type a fake UID and
+test the whole enrollment/attendance flow without the hardware.
 
 ## Setup - development machine (Windows/macOS/Linux)
 
@@ -163,11 +209,13 @@ app/
   database.py                SQLite access (students, sessions, attendance)
   camera.py                  cv2.VideoCapture wrapper
   face_engine.py              YuNet detection + LBPH train/recognize
+  rfid.py                     RC522 reader wrapper (mfrc522), mock when no hardware
   models/
     face_detection_yunet_2023mar.onnx  bundled YuNet detector weights
   web/
     __init__.py                Flask app factory
     worker.py                  background camera worker (enroll / session state machine, MJPEG frames)
+    rfid_worker.py              background RFID polling (enroll scan / session scan)
     routes.py                  HTTP routes
     templates/                  Jinja2 pages (dashboard, add student, session, students, history)
     static/style.css

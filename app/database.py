@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS students (
     student_id  TEXT UNIQUE NOT NULL,
     name        TEXT NOT NULL,
     date_added  TEXT NOT NULL,
-    photo_count INTEGER NOT NULL DEFAULT 0
+    photo_count INTEGER NOT NULL DEFAULT 0,
+    rfid_uid    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -25,9 +26,18 @@ CREATE TABLE IF NOT EXISTS attendance (
     session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     student_pk INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     timestamp  TEXT NOT NULL,
+    method     TEXT NOT NULL DEFAULT 'face',
     UNIQUE(session_id, student_pk)
 );
 """
+
+# Columns added after the initial release. Applied with ALTER TABLE on
+# existing databases so upgrades don't lose data; CREATE TABLE above
+# already includes them for brand-new databases.
+_MIGRATIONS = [
+    ("students", "rfid_uid", "ALTER TABLE students ADD COLUMN rfid_uid TEXT"),
+    ("attendance", "method", "ALTER TABLE attendance ADD COLUMN method TEXT NOT NULL DEFAULT 'face'"),
+]
 
 
 def _now():
@@ -50,6 +60,18 @@ class Database:
         with self._lock:
             self._conn.executescript(SCHEMA)
             self._conn.commit()
+            self._run_migrations()
+
+    def _run_migrations(self):
+        for table, column, statement in _MIGRATIONS:
+            cols = [r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            if column not in cols:
+                self._conn.execute(statement)
+                self._conn.commit()
+        # The unique index on rfid_uid is created in SCHEMA for new DBs; make
+        # sure it also exists on databases upgraded from before this column.
+        self._conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_rfid ON students(rfid_uid)")
+        self._conn.commit()
 
     # ---------------------------------------------------------------- students
     def add_student(self, student_id, name):
@@ -99,6 +121,22 @@ class Database:
             cur = self._conn.execute("SELECT COUNT(*) FROM students")
             return cur.fetchone()[0]
 
+    def get_student_by_rfid(self, uid):
+        with self._lock:
+            cur = self._conn.execute("SELECT * FROM students WHERE rfid_uid = ?", (uid,))
+            return cur.fetchone()
+
+    def set_student_rfid(self, pk, uid):
+        """Attach (or clear, with uid=None) an RFID card UID to a student."""
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "UPDATE students SET rfid_uid = ? WHERE id = ?", (uid, pk)
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError:
+                raise ValueError("This card is already assigned to another student.")
+
     # ---------------------------------------------------------------- sessions
     def create_session(self, name=None):
         with self._lock:
@@ -127,15 +165,16 @@ class Database:
             return cur.fetchall()
 
     # -------------------------------------------------------------- attendance
-    def mark_attendance(self, session_id, student_pk):
+    def mark_attendance(self, session_id, student_pk, method="face"):
         """Insert an attendance row. Returns True if newly marked, False if
-        the student was already marked present in this session."""
+        the student was already marked present in this session. `method`
+        is 'face' or 'rfid', recorded for the history view."""
         with self._lock:
             cur = self._conn.cursor()
             cur.execute(
-                "INSERT OR IGNORE INTO attendance (session_id, student_pk, timestamp) "
-                "VALUES (?, ?, ?)",
-                (session_id, student_pk, _now()),
+                "INSERT OR IGNORE INTO attendance (session_id, student_pk, timestamp, method) "
+                "VALUES (?, ?, ?, ?)",
+                (session_id, student_pk, _now(), method),
             )
             self._conn.commit()
             return cur.rowcount > 0
@@ -158,7 +197,7 @@ class Database:
     def get_attendance_for_session(self, session_id):
         with self._lock:
             cur = self._conn.execute(
-                "SELECT a.id, a.timestamp, st.student_id, st.name, st.id AS student_pk "
+                "SELECT a.id, a.timestamp, a.method, st.student_id, st.name, st.id AS student_pk "
                 "FROM attendance a JOIN students st ON st.id = a.student_pk "
                 "WHERE a.session_id = ? ORDER BY a.timestamp ASC",
                 (session_id,),

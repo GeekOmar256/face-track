@@ -104,8 +104,11 @@ class CameraWorker:
         self.face_engine.save_face_sample(self.enroll_pk, self.enroll_count, gray[y:y + h, x:x + w])
         return self.enroll_count
 
-    def finish_enrollment(self):
-        """Stop the camera, keep whatever photos were captured, and train."""
+    def finish_enrollment(self, allow_zero_photos=False):
+        """Stop the camera, keep whatever photos were captured, and train.
+        `allow_zero_photos` is set by the route when the student already
+        has an RFID card linked, so a face-less, card-only enrollment is
+        still valid."""
         with self.state_lock:
             if self.mode != ENROLL:
                 raise RuntimeError("No enrollment in progress.")
@@ -113,10 +116,10 @@ class CameraWorker:
             count = self.enroll_count
             self._stop_thread_locked()
 
-        if count < 1:
+        if count < 1 and not allow_zero_photos:
             self.face_engine.delete_student_data(pk)
             self.db.delete_student(pk)
-            raise RuntimeError("Capture at least one photo before finishing.")
+            raise RuntimeError("Capture at least one photo or link an RFID card before finishing.")
 
         self.db.update_photo_count(pk, count)
         self.enroll_training = True
@@ -168,6 +171,26 @@ class CameraWorker:
             self._stop_thread_locked()
         self.db.end_session(sid)
         return sid, present
+
+    def mark_present(self, pk, method):
+        """Mark a student present in the current session. Shared by the
+        face-recognition loop and the RFID worker's session callback, so
+        either credential writes to the same session log exactly once."""
+        if self.mode != SESSION or pk in self.marked_pks:
+            return False
+        student = self.db.get_student_by_pk(pk)
+        if student is None:
+            return False
+        newly_marked = self.db.mark_attendance(self.session_id, pk, method)
+        if newly_marked:
+            self.marked_pks.add(pk)
+            self.session_log.append({
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "name": student["name"],
+                "student_id": student["student_id"],
+                "method": method,
+            })
+        return newly_marked
 
     # ------------------------------------------------------------ plumbing
     def _start_thread(self, target):
@@ -256,17 +279,12 @@ class CameraWorker:
                         if label in self.marked_pks:
                             color = (255, 165, 0)
                             caption = f"{student['name']} (marked)"
+                        elif self.mark_present(label, "face"):
+                            color = (0, 200, 0)
+                            caption = f"{student['name']} - present"
                         else:
-                            newly_marked = self.db.mark_attendance(self.session_id, label)
-                            if newly_marked:
-                                self.marked_pks.add(label)
-                                color = (0, 200, 0)
-                                caption = f"{student['name']} - present"
-                                self.session_log.append({
-                                    "time": datetime.now().strftime("%H:%M:%S"),
-                                    "name": student["name"],
-                                    "student_id": student["student_id"],
-                                })
+                            color = (255, 165, 0)
+                            caption = f"{student['name']} (marked)"
 
                 cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
                 cv2.putText(

@@ -232,3 +232,100 @@ tr.clickable:hover { background: #f9fafb; }
 }
 
 .history-layout > div { flex: 1; }
+
+/* ---------------------------------------------------------------- RFID */
+.rfid-panel {
+  margin-top: 24px;
+  padding: 18px 20px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  max-width: 440px;
+}
+
+.rfid-panel h3 {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+}
+
+.rfid-panel .hint {
+  color: #6b7280;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.rfid-waiting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  color: #1e40af;
+  font-size: 14px;
+}
+
+.rfid-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3b82f6;
+  animation: rfid-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes rfid-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.55); }
+  70%  { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+.rfid-dot.listening {
+  background: #16a34a;
+  animation: rfid-pulse-green 1.6s ease-in-out infinite;
+}
+
+@keyframes rfid-pulse-green {
+  0%   { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.5); }
+  70%  { box-shadow: 0 0 0 9px rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+.rfid-result {
+  padding: 10px 0;
+  font-size: 14px;
+}
+
+.rfid-result.success { color: #166534; }
+.rfid-result.error { color: #991b1b; }
+
+.rfid-uid {
+  font-family: "Consolas", monospace;
+  background: #e5e7eb;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.rfid-simulate {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.rfid-simulate input {
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  flex: 1;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-face { background: #dbeafe; color: #1e40af; }
+.badge-rfid { background: #dcfce7; color: #166534; }
