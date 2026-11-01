@@ -10,8 +10,9 @@ CREATE TABLE IF NOT EXISTS students (
     student_id  TEXT UNIQUE NOT NULL,
     name        TEXT NOT NULL,
     date_added  TEXT NOT NULL,
-    photo_count INTEGER NOT NULL DEFAULT 0,
-    rfid_uid    TEXT
+    photo_count    INTEGER NOT NULL DEFAULT 0,
+    rfid_uid       TEXT,
+    fingerprint_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS attendance (
 # already includes them for brand-new databases.
 _MIGRATIONS = [
     ("students", "rfid_uid", "ALTER TABLE students ADD COLUMN rfid_uid TEXT"),
+    ("students", "fingerprint_id", "ALTER TABLE students ADD COLUMN fingerprint_id INTEGER"),
     ("attendance", "method", "ALTER TABLE attendance ADD COLUMN method TEXT NOT NULL DEFAULT 'face'"),
 ]
 
@@ -68,9 +70,12 @@ class Database:
             if column not in cols:
                 self._conn.execute(statement)
                 self._conn.commit()
-        # The unique index on rfid_uid is created in SCHEMA for new DBs; make
-        # sure it also exists on databases upgraded from before this column.
+        # These unique indexes are created in SCHEMA for new DBs; make sure
+        # they also exist on databases upgraded from before these columns.
         self._conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_rfid ON students(rfid_uid)")
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_students_fingerprint ON students(fingerprint_id)"
+        )
         self._conn.commit()
 
     # ---------------------------------------------------------------- students
@@ -136,6 +141,25 @@ class Database:
                 self._conn.commit()
             except sqlite3.IntegrityError:
                 raise ValueError("This card is already assigned to another student.")
+
+    def get_student_by_fingerprint(self, position):
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM students WHERE fingerprint_id = ?", (position,)
+            )
+            return cur.fetchone()
+
+    def set_student_fingerprint(self, pk, position):
+        """Attach (or clear, with position=None) a fingerprint sensor slot
+        number to a student."""
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "UPDATE students SET fingerprint_id = ? WHERE id = ?", (position, pk)
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError:
+                raise ValueError("This fingerprint slot is already assigned to another student.")
 
     # ---------------------------------------------------------------- sessions
     def create_session(self, name=None):

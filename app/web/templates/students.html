@@ -10,6 +10,7 @@
       <th>Date Added</th>
       <th>Photos</th>
       <th>RFID Card</th>
+      <th>Fingerprint</th>
       <th></th>
     </tr>
   </thead>
@@ -21,6 +22,7 @@
       <td>{{ s.date_added }}</td>
       <td>{{ s.photo_count }}</td>
       <td>{{ s.rfid_uid or '—' }}</td>
+      <td>{{ 'Slot #' ~ s.fingerprint_id if s.fingerprint_id is not none else '—' }}</td>
       <td>
         <form method="post" action="{{ url_for('facetrack.delete_student', pk=s.id) }}"
               onsubmit="return confirm('Delete {{ s.name }} (ID {{ s.student_id }})? This removes their photos and attendance history, and retrains the model.');">
@@ -29,7 +31,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="6">No students enrolled yet.</td></tr>
+    <tr><td colspan="7">No students enrolled yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>

@@ -11,6 +11,7 @@
     <span class="video-placeholder">Camera preview will appear here</span>
   </div>
   <div class="log-panel">
+    <div id="distance-indicator" class="status-text" style="display:none;"></div>
     <h3>Present this session</h3>
     <div id="rfid-indicator" class="rfid-waiting" style="display:none;">
       <span class="rfid-dot listening"></span>
@@ -19,6 +20,14 @@
     <div id="rfid-simulate" class="rfid-simulate" style="display:none;">
       <input type="text" id="rfid-sim-input" placeholder="No reader detected - type a fake UID to test">
       <button type="button" id="rfid-sim-btn" class="btn btn-secondary">Simulate Scan</button>
+    </div>
+    <div id="fp-indicator" class="rfid-waiting" style="display:none;">
+      <span class="rfid-dot listening"></span>
+      <span>Listening for fingerprints - scan one anytime</span>
+    </div>
+    <div id="fp-simulate" class="rfid-simulate" style="display:none;">
+      <select id="fp-sim-select"><option value="">No reader detected - pick a student to simulate</option></select>
+      <button type="button" id="fp-sim-btn" class="btn btn-secondary">Simulate Match</button>
     </div>
     <ul class="log-list" id="log-list"></ul>
   </div>
@@ -34,6 +43,37 @@ const rfidIndicator = document.getElementById('rfid-indicator');
 const rfidSimulate = document.getElementById('rfid-simulate');
 const rfidSimInput = document.getElementById('rfid-sim-input');
 const rfidSimBtn = document.getElementById('rfid-sim-btn');
+const distanceIndicator = document.getElementById('distance-indicator');
+const fpIndicator = document.getElementById('fp-indicator');
+const fpSimulate = document.getElementById('fp-simulate');
+const fpSimSelect = document.getElementById('fp-sim-select');
+const fpSimBtn = document.getElementById('fp-sim-btn');
+let ultrasonicAvailable = false;
+let fpHardwareAvailable = true;
+
+fetch('/ultrasonic/hardware').then(r => r.json()).then(d => {
+  ultrasonicAvailable = d.hardware_available;
+});
+
+fetch('/fingerprint/hardware').then(r => r.json()).then(d => {
+  fpHardwareAvailable = d.hardware_available;
+});
+
+async function loadFingerprintRoster() {
+  const res = await fetch('/fingerprint/enrolled');
+  const students = await res.json();
+  fpSimSelect.innerHTML = '';
+  if (students.length === 0) {
+    fpSimSelect.innerHTML = '<option value="">No students have a fingerprint on file</option>';
+    return;
+  }
+  for (const s of students) {
+    const opt = document.createElement('option');
+    opt.value = s.position;
+    opt.textContent = `${s.name} (ID ${s.student_id})`;
+    fpSimSelect.appendChild(opt);
+  }
+}
 
 let polling = null;
 let loggedCount = 0;
@@ -65,6 +105,12 @@ startBtn.addEventListener('click', async () => {
   showVideo(true);
   rfidIndicator.style.display = 'flex';
   if (!hardwareAvailable) rfidSimulate.style.display = 'flex';
+  fpIndicator.style.display = 'flex';
+  if (!fpHardwareAvailable) {
+    await loadFingerprintRoster();
+    fpSimulate.style.display = 'flex';
+  }
+  if (ultrasonicAvailable) distanceIndicator.style.display = 'block';
   polling = setInterval(poll, 1000);
 });
 
@@ -77,6 +123,9 @@ stopBtn.addEventListener('click', async () => {
   showVideo(false);
   rfidIndicator.style.display = 'none';
   rfidSimulate.style.display = 'none';
+  fpIndicator.style.display = 'none';
+  fpSimulate.style.display = 'none';
+  distanceIndicator.style.display = 'none';
   if (polling) { clearInterval(polling); polling = null; }
 });
 
@@ -90,9 +139,30 @@ rfidSimBtn.addEventListener('click', async () => {
   rfidSimInput.value = '';
 });
 
+fpSimBtn.addEventListener('click', async () => {
+  const position = fpSimSelect.value;
+  if (position === '') return;
+  await fetch('/fingerprint/simulate', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ position: parseInt(position, 10) }),
+  });
+});
+
 async function poll() {
   const res = await fetch('/session/status');
   const s = await res.json();
+
+  if (ultrasonicAvailable) {
+    if (s.distance_cm === null || s.distance_cm === undefined) {
+      distanceIndicator.textContent = 'Distance: no reading yet';
+    } else {
+      const near = s.distance_cm <= 100;
+      distanceIndicator.textContent = `Distance: ${Math.round(s.distance_cm)} cm - `
+        + (near ? 'recognizing faces' : 'move closer to check in');
+      distanceIndicator.style.color = near ? '#166534' : '#991b1b';
+    }
+  }
+
   for (let i = loggedCount; i < s.log.length; i++) {
     const entry = s.log[i];
     const li = document.createElement('li');
@@ -101,9 +171,9 @@ async function poll() {
     strong.textContent = entry.name;
 
     const badge = document.createElement('span');
-    const isRfid = entry.method === 'rfid';
-    badge.className = 'badge ' + (isRfid ? 'badge-rfid' : 'badge-face');
-    badge.textContent = isRfid ? 'RFID' : 'Face';
+    const methodLabels = { face: 'Face', rfid: 'RFID', fingerprint: 'Fingerprint' };
+    badge.className = 'badge badge-' + entry.method;
+    badge.textContent = methodLabels[entry.method] || entry.method;
 
     li.append(entry.time + '  ', strong, ` (ID ${entry.student_id}) `, badge);
     logList.appendChild(li);

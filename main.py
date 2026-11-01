@@ -1,4 +1,4 @@
-"""Face Track - entry point.
+"""BioAttendance - entry point.
 
 Run with:  python3 main.py
 Then open http://<this-machine's-ip>:5000 in a browser on the same network

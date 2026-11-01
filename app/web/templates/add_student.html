@@ -44,6 +44,25 @@
   </div>
 </div>
 
+<div class="rfid-panel">
+  <h3>Fingerprint</h3>
+  <div class="hint">Optional - enroll a fingerprint so this student can also check in by scanning it. Needs the same finger placed twice.</div>
+
+  <button type="button" id="fp-scan-btn" class="btn btn-primary" disabled>Enroll Fingerprint</button>
+  <button type="button" id="fp-cancel-btn" class="btn btn-secondary" style="display:none;">Cancel</button>
+  <button type="button" id="fp-clear-btn" class="btn btn-danger" style="display:none;">Remove Fingerprint</button>
+
+  <div id="fp-waiting" class="rfid-waiting" style="display:none;">
+    <span class="rfid-dot"></span>
+    <span id="fp-waiting-text">Place your finger on the sensor...</span>
+  </div>
+  <div id="fp-result" class="rfid-result"></div>
+
+  <div id="fp-simulate" class="rfid-simulate" style="display:none;">
+    <button type="button" id="fp-sim-btn" class="btn btn-secondary">Simulate Next Step</button>
+  </div>
+</div>
+
 <script>
 const form = document.getElementById('enroll-form');
 const startBtn = document.getElementById('start-btn');
@@ -64,13 +83,31 @@ const rfidSimulate = document.getElementById('rfid-simulate');
 const rfidSimInput = document.getElementById('rfid-sim-input');
 const rfidSimBtn = document.getElementById('rfid-sim-btn');
 
+const fpScanBtn = document.getElementById('fp-scan-btn');
+const fpCancelBtn = document.getElementById('fp-cancel-btn');
+const fpClearBtn = document.getElementById('fp-clear-btn');
+const fpWaiting = document.getElementById('fp-waiting');
+const fpWaitingText = document.getElementById('fp-waiting-text');
+const fpResult = document.getElementById('fp-result');
+const fpSimulate = document.getElementById('fp-simulate');
+const fpSimBtn = document.getElementById('fp-sim-btn');
+
 let polling = null;
 let rfidPolling = null;
+let fpPolling = null;
 let photoCount = 0;
 let rfidLinked = false;
+let fingerprintLinked = false;
+
+function hasCredential() {
+  return photoCount >= 1 || rfidLinked || fingerprintLinked;
+}
 
 fetch('/rfid/hardware').then(r => r.json()).then(d => {
   if (!d.hardware_available) rfidSimulate.style.display = 'flex';
+});
+fetch('/fingerprint/hardware').then(r => r.json()).then(d => {
+  if (!d.hardware_available) fpSimulate.style.display = 'flex';
 });
 
 function setStage(stage) {
@@ -79,9 +116,10 @@ function setStage(stage) {
   nameInput.disabled = stage !== 'form';
   startBtn.disabled = stage !== 'form';
   captureBtn.disabled = stage !== 'capturing';
-  finishBtn.disabled = stage !== 'capturing' || (photoCount < 1 && !rfidLinked);
+  finishBtn.disabled = stage !== 'capturing' || !hasCredential();
   cancelBtn.disabled = stage === 'form';
   rfidScanBtn.disabled = stage !== 'capturing';
+  fpScanBtn.disabled = stage !== 'capturing';
 }
 
 function showVideo(show) {
@@ -100,11 +138,23 @@ function resetRfidPanel() {
   if (rfidPolling) { clearInterval(rfidPolling); rfidPolling = null; }
 }
 
+function resetFingerprintPanel() {
+  fingerprintLinked = false;
+  fpWaiting.style.display = 'none';
+  fpResult.className = 'rfid-result';
+  fpResult.textContent = '';
+  fpScanBtn.style.display = 'inline-block';
+  fpCancelBtn.style.display = 'none';
+  fpClearBtn.style.display = 'none';
+  if (fpPolling) { clearInterval(fpPolling); fpPolling = null; }
+}
+
 function resetUI() {
   photoCount = 0;
   setStage('form');
   showVideo(false);
   resetRfidPanel();
+  resetFingerprintPanel();
   if (polling) { clearInterval(polling); polling = null; }
 }
 
@@ -140,7 +190,7 @@ captureBtn.addEventListener('click', async () => {
     return;
   }
   photoCount = data.count;
-  finishBtn.disabled = photoCount < 1 && !rfidLinked;
+  finishBtn.disabled = !hasCredential();
   statusText.textContent = `${photoCount} photo${photoCount === 1 ? '' : 's'} captured. Capture more or click Finish.`;
 });
 
@@ -206,7 +256,7 @@ rfidClearBtn.addEventListener('click', async () => {
   if (res.ok) {
     resetRfidPanel();
     rfidScanBtn.style.display = 'inline-block';
-    finishBtn.disabled = photoCount < 1 && !rfidLinked;
+    finishBtn.disabled = !hasCredential();
   }
 });
 
@@ -236,7 +286,7 @@ async function pollRfid() {
     uidSpan.className = 'rfid-uid';
     uidSpan.textContent = s.scanned_uid;
     rfidResult.append('Card linked: ', uidSpan);
-    finishBtn.disabled = photoCount < 1 && !rfidLinked;
+    finishBtn.disabled = !hasCredential();
     if (rfidPolling) { clearInterval(rfidPolling); rfidPolling = null; }
   } else if (s.scan_error) {
     rfidWaiting.style.display = 'none';
@@ -245,6 +295,73 @@ async function pollRfid() {
     rfidResult.className = 'rfid-result error';
     rfidResult.textContent = s.scan_error;
     if (rfidPolling) { clearInterval(rfidPolling); rfidPolling = null; }
+  }
+}
+
+// --------------------------------------------------------------- Fingerprint
+const fpStageText = {
+  place_first: 'Place your finger on the sensor...',
+  remove: 'Lift your finger...',
+  place_second: 'Place the same finger again...',
+};
+
+fpScanBtn.addEventListener('click', async () => {
+  fpResult.className = 'rfid-result';
+  fpResult.textContent = '';
+  const res = await fetch('/add-student/fingerprint/start', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) {
+    fpResult.className = 'rfid-result error';
+    fpResult.textContent = data.error || 'Could not start enrollment.';
+    return;
+  }
+  fpWaitingText.textContent = fpStageText.place_first;
+  fpWaiting.style.display = 'flex';
+  fpScanBtn.style.display = 'none';
+  fpCancelBtn.style.display = 'inline-block';
+  fpPolling = setInterval(pollFingerprint, 400);
+});
+
+fpCancelBtn.addEventListener('click', async () => {
+  await fetch('/add-student/fingerprint/cancel', { method: 'POST' });
+  resetFingerprintPanel();
+});
+
+fpClearBtn.addEventListener('click', async () => {
+  const res = await fetch('/add-student/fingerprint/clear', { method: 'POST' });
+  if (res.ok) {
+    resetFingerprintPanel();
+    finishBtn.disabled = !hasCredential();
+  }
+});
+
+fpSimBtn.addEventListener('click', async () => {
+  await fetch('/fingerprint/simulate', { method: 'POST' });
+});
+
+async function pollFingerprint() {
+  const res = await fetch('/add-student/fingerprint/status');
+  const s = await res.json();
+
+  if (s.stage === 'done' && s.enrolled_position !== null) {
+    fingerprintLinked = true;
+    fpWaiting.style.display = 'none';
+    fpCancelBtn.style.display = 'none';
+    fpScanBtn.style.display = 'none';
+    fpClearBtn.style.display = 'inline-block';
+    fpResult.className = 'rfid-result success';
+    fpResult.textContent = `Fingerprint enrolled (slot #${s.enrolled_position}).`;
+    finishBtn.disabled = !hasCredential();
+    if (fpPolling) { clearInterval(fpPolling); fpPolling = null; }
+  } else if (s.scan_error) {
+    fpWaiting.style.display = 'none';
+    fpCancelBtn.style.display = 'none';
+    fpScanBtn.style.display = 'inline-block';
+    fpResult.className = 'rfid-result error';
+    fpResult.textContent = s.scan_error;
+    if (fpPolling) { clearInterval(fpPolling); fpPolling = null; }
+  } else if (s.stage && fpStageText[s.stage]) {
+    fpWaitingText.textContent = fpStageText[s.stage];
   }
 }
 </script>

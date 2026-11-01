@@ -3,4 +3,5 @@ __pycache__/
 data/attendance.db
 data/dataset/
 data/trainer/
+data/firebase_credentials.json
 *.csv

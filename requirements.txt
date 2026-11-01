@@ -1,12 +1,39 @@
 opencv-contrib-python==4.10.0.84
-numpy>=1.23
+# dlib wheels (pulled in by face-recognition below) are generally built
+# against numpy's 1.x ABI; numpy 2.x causes
+# "RuntimeError: Unsupported image type, must be 8bit gray or RGB image."
+# even on a perfectly valid image. Confirmed on this project - keep <2.0.
+numpy>=1.23,<2.0
 Flask>=3.0
 
-# RC522 RFID reader support. Only installable/usable on the Pi itself (needs
-# SPI + GPIO hardware); these markers skip them on Windows/macOS dev
-# machines so `pip install -r requirements.txt` still works there. The app
-# runs fine without them too - app/rfid.py falls back to a "simulate a
-# scan" UI when this hardware isn't present.
+# Face recognition (dlib, via face_recognition). This pulls in dlib, a C++
+# extension - on Raspberry Pi OS, pip is preconfigured to use piwheels.org,
+# which usually has a prebuilt ARM wheel so this installs in a minute or
+# two. If piwheels has no wheel for your Pi OS / Python version, pip will
+# build dlib from source instead, which can take a long time (increase
+# swap first - see README) and needs cmake + a C++ compiler
+# (`sudo apt install -y cmake build-essential`).
+face-recognition>=1.3.0
+
+# RC522 RFID reader and HC-SR04 ultrasonic sensor support. Only
+# installable/usable on the Pi itself (needs SPI/GPIO hardware); these
+# markers skip them on Windows/macOS dev machines so
+# `pip install -r requirements.txt` still works there. The app runs fine
+# without them too - app/rfid.py and app/ultrasonic.py fall back to mocks
+# (a "simulate" UI for RFID; the proximity gate just stays open) when this
+# hardware isn't present.
 mfrc522; sys_platform == "linux" and (platform_machine == "armv7l" or platform_machine == "aarch64")
 spidev; sys_platform == "linux" and (platform_machine == "armv7l" or platform_machine == "aarch64")
 RPi.GPIO; sys_platform == "linux" and (platform_machine == "armv7l" or platform_machine == "aarch64")
+
+# AS608/R307/FPM10A fingerprint sensor support (UART). pyfingerprint is
+# pure Python (just needs pyserial), so no platform marker is required -
+# it installs everywhere and simply finds no sensor off the Pi.
+pyfingerprint>=1.5
+pyserial>=3.5
+
+# Optional one-way sync to Firebase/Firestore, for a separate teacher/
+# student-facing app to read live attendance data. Installs fine
+# everywhere; without a credentials file configured (see README), it's a
+# silent no-op and the app behaves exactly as it does without Firebase.
+firebase-admin>=6.0

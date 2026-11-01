@@ -1,16 +1,20 @@
-"""Face detection, dataset capture and LBPH recognition.
+"""Face detection, dataset capture and dlib-based recognition.
 
-Uses OpenCV's YuNet (a small ONNX DNN, via cv2.FaceDetectorYN) for
-detection and the LBPH recognizer for recognition. Both run comfortably on
-a Raspberry Pi without needing dlib / the `face_recognition` package,
-which are slow to build on Pi hardware. YuNet replaced an earlier Haar
-cascade here because it handles angled/partially-occluded faces and
-varied lighting far more reliably.
+Detection uses OpenCV's YuNet (a small ONNX DNN, via cv2.FaceDetectorYN) -
+it's fast and runs fine on a Pi CPU. Recognition uses dlib's ResNet
+face-embedding model via the `face_recognition` package: each enrolled
+photo is reduced to a 128-d encoding, and a live face is identified by
+nearest Euclidean distance to those encodings. This is more accurate than
+the LBPH recognizer this replaced, at a real cost: dlib is slow (and can
+be slow to install - see requirements.txt) compared to LBPH, so expect
+noticeably heavier CPU use per frame on a Pi.
 """
 import os
+import pickle
 import shutil
 
 import cv2
+import face_recognition
 import numpy as np
 
 from . import config
@@ -27,26 +31,32 @@ class FaceEngine:
             score_threshold=config.DETECTION_SCORE_THRESHOLD,
         )
         self._detector_size = (config.FRAME_WIDTH, config.FRAME_HEIGHT)
-        self.recognizer = cv2.face.LBPHFaceRecognizer_create()
+        self.known_encodings = []  # list of 128-d np arrays
+        self.known_labels = []     # parallel list of student pk (int)
         self.model_loaded = False
         self.load_model()
 
     # ------------------------------------------------------------------ model
     def load_model(self):
-        if os.path.isfile(config.TRAINER_FILE):
-            self.recognizer.read(config.TRAINER_FILE)
-            self.model_loaded = True
+        if os.path.isfile(config.ENCODINGS_FILE):
+            with open(config.ENCODINGS_FILE, "rb") as f:
+                data = pickle.load(f)
+            self.known_encodings = data.get("encodings", [])
+            self.known_labels = data.get("labels", [])
+            self.model_loaded = len(self.known_encodings) > 0
         else:
+            self.known_encodings = []
+            self.known_labels = []
             self.model_loaded = False
         return self.model_loaded
 
     def train(self):
-        """(Re)train the recognizer from every image under DATASET_DIR.
+        """(Re)compute face encodings for every image under DATASET_DIR.
 
         Each student's photos live in DATASET_DIR/<student_pk>/*.jpg, so the
-        folder name doubles as the integer label LBPH requires.
+        folder name doubles as the student's integer primary key.
         """
-        faces, labels = [], []
+        encodings, labels = [], []
         if os.path.isdir(config.DATASET_DIR):
             for folder in os.listdir(config.DATASET_DIR):
                 folder_path = os.path.join(config.DATASET_DIR, folder)
@@ -60,23 +70,35 @@ class FaceEngine:
                     if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
                         continue
                     img_path = os.path.join(folder_path, fname)
-                    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-                    if img is None:
+                    bgr = cv2.imread(img_path, cv2.IMREAD_COLOR)
+                    if bgr is None:
                         continue
-                    faces.append(img)
-                    labels.append(label)
+                    enc = self._encode(bgr)
+                    if enc is not None:
+                        encodings.append(enc)
+                        labels.append(label)
 
-        if not faces:
+        if not encodings:
             # No data left (e.g. last student deleted) - drop any stale model.
-            if os.path.isfile(config.TRAINER_FILE):
-                os.remove(config.TRAINER_FILE)
+            if os.path.isfile(config.ENCODINGS_FILE):
+                os.remove(config.ENCODINGS_FILE)
+            self.known_encodings, self.known_labels = [], []
             self.model_loaded = False
             return 0
 
-        self.recognizer.train(faces, np.array(labels))
-        self.recognizer.save(config.TRAINER_FILE)
+        with open(config.ENCODINGS_FILE, "wb") as f:
+            pickle.dump({"encodings": encodings, "labels": labels}, f)
+        self.known_encodings, self.known_labels = encodings, labels
         self.model_loaded = True
-        return len(faces)
+        return len(encodings)
+
+    def _encode(self, bgr_face):
+        """Returns a 128-d encoding for a BGR face image/crop, or None if
+        dlib's landmark detector can't find a face in it."""
+        rgb = cv2.cvtColor(bgr_face, cv2.COLOR_BGR2RGB)
+        h, w = rgb.shape[:2]
+        encs = face_recognition.face_encodings(rgb, known_face_locations=[(0, w, h, 0)])
+        return encs[0] if encs else None
 
     # --------------------------------------------------------------- dataset
     def student_dataset_dir(self, pk):
@@ -84,8 +106,8 @@ class FaceEngine:
         os.makedirs(path, exist_ok=True)
         return path
 
-    def save_face_sample(self, pk, index, gray_face):
-        face = cv2.resize(gray_face, config.FACE_IMG_SIZE)
+    def save_face_sample(self, pk, index, bgr_face):
+        face = cv2.resize(bgr_face, config.FACE_IMG_SIZE)
         path = os.path.join(self.student_dataset_dir(pk), f"img_{index:03d}.jpg")
         cv2.imwrite(path, face)
 
@@ -123,10 +145,16 @@ class FaceEngine:
             return None
         return max(faces, key=lambda f: f[2] * f[3])
 
-    def predict(self, gray_face):
-        """Returns (label, confidence). Confidence is a distance: lower is
-        a better match. Caller compares against RECOGNITION_CONFIDENCE_THRESHOLD."""
+    def predict(self, bgr_face):
+        """Returns (label, distance). Distance is Euclidean over 128-d
+        encodings: lower is a better match. Caller compares against
+        RECOGNITION_CONFIDENCE_THRESHOLD. (None, None) if no model is
+        trained yet, or dlib can't encode this particular crop."""
         if not self.model_loaded:
             return None, None
-        face = cv2.resize(gray_face, config.FACE_IMG_SIZE)
-        return self.recognizer.predict(face)
+        enc = self._encode(bgr_face)
+        if enc is None:
+            return None, None
+        distances = face_recognition.face_distance(self.known_encodings, enc)
+        best_idx = int(np.argmin(distances))
+        return self.known_labels[best_idx], float(distances[best_idx])

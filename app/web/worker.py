@@ -47,6 +47,16 @@ class CameraWorker:
         self.marked_pks = set()
         self.session_log = []
 
+        # optional: set by the app factory. When present, the session loop
+        # only runs face recognition while someone is within range.
+        self.ultrasonic_worker = None
+        self.last_distance_cm = None
+
+        # optional: set by the app factory. When present (and configured
+        # with real credentials), every new attendance mark is also pushed
+        # to Firestore. A no-op FirebaseSync if unconfigured.
+        self.firebase = None
+
     # ------------------------------------------------------------- status
     def status(self):
         with self.frame_lock:
@@ -59,6 +69,7 @@ class CameraWorker:
                 "session_id": self.session_id,
                 "present_count": len(self.marked_pks),
                 "log": list(self.session_log),
+                "distance_cm": self.last_distance_cm,
             }
 
     def get_jpeg(self):
@@ -99,9 +110,8 @@ class CameraWorker:
             raise RuntimeError("No face detected. Face the camera and try again.")
 
         x, y, w, h = face
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         self.enroll_count += 1
-        self.face_engine.save_face_sample(self.enroll_pk, self.enroll_count, gray[y:y + h, x:x + w])
+        self.face_engine.save_face_sample(self.enroll_pk, self.enroll_count, frame[y:y + h, x:x + w])
         return self.enroll_count
 
     def finish_enrollment(self, allow_zero_photos=False):
@@ -119,7 +129,9 @@ class CameraWorker:
         if count < 1 and not allow_zero_photos:
             self.face_engine.delete_student_data(pk)
             self.db.delete_student(pk)
-            raise RuntimeError("Capture at least one photo or link an RFID card before finishing.")
+            raise RuntimeError(
+                "Capture at least one photo, or link an RFID card or fingerprint, before finishing."
+            )
 
         self.db.update_photo_count(pk, count)
         self.enroll_training = True
@@ -154,6 +166,7 @@ class CameraWorker:
             )
             self.marked_pks = set()
             self.session_log = []
+            self.last_distance_cm = None
             self.mode = SESSION
             try:
                 self._start_thread(self._session_loop)
@@ -184,12 +197,15 @@ class CameraWorker:
         newly_marked = self.db.mark_attendance(self.session_id, pk, method)
         if newly_marked:
             self.marked_pks.add(pk)
+            timestamp = datetime.now().strftime("%H:%M:%S")
             self.session_log.append({
-                "time": datetime.now().strftime("%H:%M:%S"),
+                "time": timestamp,
                 "name": student["name"],
                 "student_id": student["student_id"],
                 "method": method,
             })
+            if self.firebase is not None:
+                self.firebase.push_attendance(self.session_id, student, timestamp, method)
         return newly_marked
 
     # ------------------------------------------------------------ plumbing
@@ -261,11 +277,25 @@ class CameraWorker:
                 continue
 
             frame = cv2.flip(frame, 1)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            distance_cm = self.ultrasonic_worker.get_distance_cm() if self.ultrasonic_worker else None
+            self.last_distance_cm = distance_cm
+            # Fail-open: with no sensor attached (distance_cm is None),
+            # recognition always runs, same as before this feature existed.
+            proximity_ok = distance_cm is None or distance_cm <= config.PROXIMITY_THRESHOLD_CM
+
+            if not proximity_ok:
+                cv2.putText(
+                    frame, "Move closer to check in", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2,
+                )
+                self._publish(frame)
+                continue
+
             faces = self.face_engine.detect_faces(frame)
 
             for (x, y, w, h) in faces:
-                label, confidence = self.face_engine.predict(gray[y:y + h, x:x + w])
+                label, confidence = self.face_engine.predict(frame[y:y + h, x:x + w])
                 color = (0, 0, 255)
                 caption = "Unknown"
 
