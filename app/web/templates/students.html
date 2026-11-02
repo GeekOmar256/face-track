@@ -7,6 +7,7 @@
     <tr>
       <th>Student ID</th>
       <th>Name</th>
+      <th>Status</th>
       <th>Date Added</th>
       <th>Photos</th>
       <th>RFID Card</th>
@@ -18,7 +19,17 @@
     {% for s in students %}
     <tr>
       <td>{{ s.student_id }}</td>
-      <td>{{ s.name }}</td>
+      <td>
+        <span class="edit-name-text" id="name-text-{{ s.id }}">{{ s.name }}</span>
+        <form method="post" action="{{ url_for('facetrack.edit_student', pk=s.id) }}"
+              class="edit-name-form" id="name-form-{{ s.id }}" style="display:none;">
+          <input type="text" name="name" value="{{ s.name }}" required>
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn btn-secondary" onclick="toggleEdit({{ s.id }}, false)">Cancel</button>
+        </form>
+        <button type="button" class="btn btn-secondary edit-name-btn" id="edit-btn-{{ s.id }}" onclick="toggleEdit({{ s.id }}, true)">Edit</button>
+      </td>
+      <td>{{ 'Pending biometric' if s.status == 'pending_biometric' else 'Enrolled' }}</td>
       <td>{{ s.date_added }}</td>
       <td>{{ s.photo_count }}</td>
       <td>{{ s.rfid_uid or '—' }}</td>
@@ -31,8 +42,16 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="7">No students enrolled yet.</td></tr>
+    <tr><td colspan="8">No students enrolled yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>
+
+<script>
+function toggleEdit(pk, editing) {
+  document.getElementById(`name-text-${pk}`).style.display = editing ? 'none' : 'inline';
+  document.getElementById(`name-form-${pk}`).style.display = editing ? 'inline' : 'none';
+  document.getElementById(`edit-btn-${pk}`).style.display = editing ? 'none' : 'inline';
+}
+</script>
 {% endblock %}

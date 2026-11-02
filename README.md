@@ -29,8 +29,9 @@ attendance rows (each tagged with how the student checked in: `face`,
 `rfid` or `fingerprint`). Face photos live in `data/dataset/<student_pk>/`,
 and the trained model in `data/trainer/encodings.pickle`. Existing
 databases are migrated automatically on startup when upgrading from an
-older version. Optionally, the same data can be pushed one-way to Firebase
-for a separate app to read - see "Firebase sync" below.
+older version. Optionally, the same data syncs with Firebase so the web
+app in [`webapp/`](webapp/) can give admins and students remote access -
+see "Firebase sync and the web app" below.
 
 ## How recognition works
 
@@ -174,14 +175,22 @@ a **"Simulate"** control (advance the enroll wizard a step; pick a student
 to simulate a match for during a session) so the flow is testable without
 hardware.
 
-## Firebase sync (optional)
+## Firebase sync and the web app (optional)
 
-The Pi can optionally push students, sessions and attendance to Firebase
-Firestore, one-way (Pi -> Firestore), so a separate teacher/student-facing
-app can read live attendance data. This repository does not include that
-app - only the Pi-side sync that a separate app's backend/frontend can
-read from. It's entirely optional: without it configured, the app works
-exactly as described above, purely on local SQLite.
+The Pi can optionally sync with Firebase Firestore so a separate web app
+(in [`webapp/`](webapp/)) gives admins and students remote access -
+admins can view/edit/remove students, pre-register a new student, and
+remotely start/stop an attendance session; students can look up their own
+attendance by Student ID. It's entirely optional: without it configured,
+the Pi app works exactly as described above, purely on local SQLite.
+
+This is **two-way**, but asymmetrically: the Pi pushes students, sessions
+and attendance outward for reading, and the web app only ever *requests*
+changes (by writing to a `commands` collection) rather than writing data
+directly - the Pi (`app/web/firebase_command_worker.py`) is what actually
+executes every change, so it stays the single source of truth. See
+[`webapp/README.md`](webapp/README.md) for how to deploy the web app
+itself; this section covers the Pi side.
 
 ### Setup
 
@@ -195,35 +204,47 @@ exactly as described above, purely on local SQLite.
 3. `firebase-admin` is already in `requirements.txt`. Nothing else to
    configure - on startup, `app/firebase_sync.py` checks for that file and
    silently stays disabled if it's missing, so there's no error if you
-   haven't set it up yet.
+   haven't set it up yet. `app/web/firebase_command_worker.py` only starts
+   listening for remote commands once that file is present too.
 
 ### Firestore schema
 
-A separate app reading this data should expect three collections:
-
 - **`students`** (doc id = the student's internal numeric id): `student_id`,
   `name`, `date_added`, `photo_count`, `has_rfid` (bool), `has_fingerprint`
-  (bool).
+  (bool), `status` (`"enrolled"` or `"pending_biometric"`).
 - **`sessions`** (doc id = session id): `name`, `start_time`, `end_time`
   (`null` while a session is in progress).
 - **`attendance`** (doc id = `"<session_id>_<student_id>"`): `session_id`,
   `student_pk`, `student_id`, `name`, `timestamp`, `method` (`"face"`,
   `"rfid"` or `"fingerprint"`).
+- **`student_stats`** (doc id = the student's **human** `student_id`, not
+  the internal id): `student_id`, `name`, `total_present`, `records`
+  (list of `{session_id, session_name, timestamp, method}`, most recent
+  100). This is the only collection the web app's student page can read
+  without an admin login - deliberately thin and keyed so one student's
+  lookup can't expose anyone else's data. See the security note in
+  `webapp/README.md`.
+- **`commands`** (doc id = auto): `type` (`"start_session"`,
+  `"stop_session"`, `"pre_register_student"`, `"update_student"`,
+  `"delete_student"`), `payload`, `status` (`"pending"` -> `"done"` or
+  `"error"`), `result`, `error_message`, `created_by` (admin's auth uid).
+  Written only by the web app; only the Pi updates `status`.
+- **`admins`** (doc id = a Firebase Auth user's uid): provisioned
+  manually, not by any app code - see `webapp/README.md`.
 
-Every write is best-effort: a Firestore hiccup is logged nowhere and never
-blocks or fails the local operation (enrollment, session, attendance mark
-all still work against SQLite even if Firestore is unreachable).
+Every push from the Pi is best-effort: a Firestore hiccup never blocks or
+fails the local operation (enrollment, session, attendance mark all still
+work against SQLite even if Firestore is unreachable). A `commands` doc
+the Pi can't reach simply stays `"pending"` until it reconnects.
 
-### What this doesn't do
+### Remote enrollment is two steps, by necessity
 
-This only pushes data outward. It does not pull anything back from
-Firebase - there's no remote "add a student from the mobile app" flow
-built here, since that would need photo upload handling, moderation/
-consent decisions and a defined contract with that app's own data model,
-none of which exist yet. The natural extension point, if you build that
-app, is a Cloud Function or scheduled job on the Pi that watches a
-`pending_enrollments` collection and calls the same `Database`/`FaceEngine`
-methods this app's routes already use.
+A photo (and fingerprint/RFID) can only be captured by the physical Pi
+hardware, so "add a student" from the web app only pre-registers the
+record (`status: "pending_biometric"`). The Add Student page on the Pi
+lists these under "Pending remote enrollments" with a **Continue
+Enrollment** button that resumes capture for that exact student - no need
+to re-type their ID or name.
 
 ## Setup - development machine (Windows/macOS/Linux)
 
@@ -360,7 +381,7 @@ app/
   rfid.py                     RC522 reader wrapper (mfrc522), mock when no hardware
   fingerprint.py               AS608/R307/FPM10A wrapper (pyfingerprint), mock when no hardware
   ultrasonic.py                HC-SR04 wrapper (RPi.GPIO), mock when no hardware
-  firebase_sync.py             optional one-way push to Firestore, no-op when unconfigured
+  firebase_sync.py             push to Firestore (students/sessions/attendance/student_stats), no-op when unconfigured
   models/
     face_detection_yunet_2023mar.onnx  bundled YuNet detector weights
   web/
@@ -369,9 +390,13 @@ app/
     rfid_worker.py              background RFID polling (enroll scan / session scan)
     fingerprint_worker.py        background fingerprint polling (two-step enroll wizard / session scan)
     ultrasonic_worker.py         background distance polling (session-scoped)
+    firebase_command_worker.py   executes remote commands from the web app (start/stop session, enroll/edit/delete student)
     routes.py                  HTTP routes
     templates/                  Jinja2 pages (dashboard, add student, session, students, history)
     static/style.css
 data/                        created at runtime (db, dataset, trained model);
                               also where firebase_credentials.json goes if used (gitignored)
+webapp/                      separate Firebase-hosted admin/student web app - see webapp/README.md
+  firebase.json, firestore.rules, .firebaserc
+  public/                     static site (admin.html, student.html, index.html, firebase-config.js)
 ```

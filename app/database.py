@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS students (
     date_added  TEXT NOT NULL,
     photo_count    INTEGER NOT NULL DEFAULT 0,
     rfid_uid       TEXT,
-    fingerprint_id INTEGER
+    fingerprint_id INTEGER,
+    status         TEXT NOT NULL DEFAULT 'enrolled'
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -39,6 +40,7 @@ _MIGRATIONS = [
     ("students", "rfid_uid", "ALTER TABLE students ADD COLUMN rfid_uid TEXT"),
     ("students", "fingerprint_id", "ALTER TABLE students ADD COLUMN fingerprint_id INTEGER"),
     ("attendance", "method", "ALTER TABLE attendance ADD COLUMN method TEXT NOT NULL DEFAULT 'face'"),
+    ("students", "status", "ALTER TABLE students ADD COLUMN status TEXT NOT NULL DEFAULT 'enrolled'"),
 ]
 
 
@@ -79,7 +81,7 @@ class Database:
         self._conn.commit()
 
     # ---------------------------------------------------------------- students
-    def add_student(self, student_id, name):
+    def add_student(self, student_id, name, status="enrolled"):
         student_id = student_id.strip()
         name = name.strip()
         if not student_id or not name:
@@ -88,14 +90,41 @@ class Database:
             cur = self._conn.cursor()
             try:
                 cur.execute(
-                    "INSERT INTO students (student_id, name, date_added, photo_count) "
-                    "VALUES (?, ?, ?, 0)",
-                    (student_id, name, _now()),
+                    "INSERT INTO students (student_id, name, date_added, photo_count, status) "
+                    "VALUES (?, ?, ?, 0, ?)",
+                    (student_id, name, _now(), status),
                 )
                 self._conn.commit()
             except sqlite3.IntegrityError:
                 raise ValueError(f"Student ID '{student_id}' already exists.")
             return cur.lastrowid
+
+    def get_pending_students(self):
+        """Students pre-registered remotely (via the web app) that still
+        need their photo/fingerprint/RFID captured in person at the Pi."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM students WHERE status = 'pending_biometric' "
+                "ORDER BY date_added ASC"
+            )
+            return cur.fetchall()
+
+    def set_student_status(self, pk, status):
+        with self._lock:
+            self._conn.execute(
+                "UPDATE students SET status = ? WHERE id = ?", (status, pk)
+            )
+            self._conn.commit()
+
+    def update_student_name(self, pk, name):
+        name = name.strip()
+        if not name:
+            raise ValueError("Name is required.")
+        with self._lock:
+            self._conn.execute(
+                "UPDATE students SET name = ? WHERE id = ?", (name, pk)
+            )
+            self._conn.commit()
 
     def update_photo_count(self, pk, count):
         with self._lock:

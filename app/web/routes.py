@@ -57,7 +57,19 @@ def dashboard():
 # --------------------------------------------------------------- add student
 @bp.route("/add-student")
 def add_student():
-    return render_template("add_student.html", active="add_student")
+    return render_template(
+        "add_student.html", active="add_student",
+        pending=_db().get_pending_students(),
+    )
+
+
+@bp.route("/add-student/resume/<int:pk>", methods=["POST"])
+def add_student_resume(pk):
+    try:
+        pk, count = _worker().resume_enrollment(pk)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"pk": pk, "count": count})
 
 
 @bp.route("/add-student/start", methods=["POST"])
@@ -105,6 +117,7 @@ def add_student_finish():
     finished_student = _db().get_student_by_pk(pk)
     if finished_student is not None:
         _firebase().push_student(finished_student)
+        _firebase().push_student_stats(finished_student, _db().get_attendance_for_student(pk))
 
     return jsonify({"pk": pk, "count": count})
 
@@ -375,15 +388,41 @@ def delete_student(pk):
         flash("Student not found.", "error")
         return redirect(url_for("facetrack.students"))
 
+    face_engine = _face_engine()  # grab it now - the retrain thread below
+                                   # runs outside the request/app context,
+                                   # where current_app isn't available
     db.delete_student(pk)
-    _face_engine().delete_student_data(pk)
+    face_engine.delete_student_data(pk)
     _firebase().delete_student(pk)
+    _firebase().delete_student_stats(student["student_id"])
     flash(f"Deleted {student['name']} and retraining the model...", "info")
 
     def retrain_job():
-        _face_engine().train()
+        face_engine.train()
 
     threading.Thread(target=retrain_job, daemon=True).start()
+    return redirect(url_for("facetrack.students"))
+
+
+@bp.route("/students/<int:pk>/edit", methods=["POST"])
+def edit_student(pk):
+    db = _db()
+    student = db.get_student_by_pk(pk)
+    if student is None:
+        flash("Student not found.", "error")
+        return redirect(url_for("facetrack.students"))
+
+    name = (request.form.get("name") or "").strip()
+    try:
+        db.update_student_name(pk, name)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("facetrack.students"))
+
+    updated = db.get_student_by_pk(pk)
+    _firebase().push_student(updated)
+    _firebase().push_student_stats(updated, db.get_attendance_for_student(pk))
+    flash(f"Updated {updated['name']}.", "info")
     return redirect(url_for("facetrack.students"))
 
 

@@ -41,6 +41,7 @@ class CameraWorker:
         self.enroll_training = False
         self._last_preview_frame = None   # raw BGR frame, for capture_photo()
         self._last_preview_face = None    # (x, y, w, h) of the detected face, or None
+        self._resumed_pending = False     # True if this enrollment resumed a pre-registered student
 
         # session state
         self.session_id = None
@@ -86,6 +87,7 @@ class CameraWorker:
             self.enroll_count = 0
             self.enroll_complete = False
             self.enroll_training = False
+            self._resumed_pending = False
             self.error = None
             self._last_preview_frame = None
             self._last_preview_face = None
@@ -134,6 +136,7 @@ class CameraWorker:
             )
 
         self.db.update_photo_count(pk, count)
+        self.db.set_student_status(pk, "enrolled")
         self.enroll_training = True
 
         def train_job():
@@ -149,10 +152,38 @@ class CameraWorker:
             if self.mode != ENROLL:
                 return
             pk = self.enroll_pk
+            was_resumed = self._resumed_pending
             self._stop_thread_locked()
-        if pk is not None:
+        if pk is not None and not was_resumed:
             self.face_engine.delete_student_data(pk)
             self.db.delete_student(pk)
+
+    def resume_enrollment(self, pk):
+        """Continue capturing for a student who was pre-registered remotely
+        (via the Firebase web app) and is still 'pending_biometric' - picks
+        up the existing row instead of creating a new one, so cancelling
+        doesn't delete the student the admin already registered."""
+        with self.state_lock:
+            if self.mode != IDLE:
+                raise RuntimeError("The camera is busy with another operation.")
+            student = self.db.get_student_by_pk(pk)
+            if student is None:
+                raise RuntimeError("Student not found.")
+            self.enroll_pk = pk
+            self.enroll_count = student["photo_count"] or 0
+            self.enroll_complete = False
+            self.enroll_training = False
+            self._resumed_pending = True
+            self.error = None
+            self._last_preview_frame = None
+            self._last_preview_face = None
+            self.mode = ENROLL
+            try:
+                self._start_thread(self._enroll_preview_loop)
+            except RuntimeError:
+                self.mode = IDLE
+                raise
+            return pk, self.enroll_count
 
     # ------------------------------------------------------------ session
     def start_session(self):
@@ -206,6 +237,7 @@ class CameraWorker:
             })
             if self.firebase is not None:
                 self.firebase.push_attendance(self.session_id, student, timestamp, method)
+                self.firebase.push_student_stats(student, self.db.get_attendance_for_student(pk))
         return newly_marked
 
     # ------------------------------------------------------------ plumbing

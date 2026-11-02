@@ -71,10 +71,37 @@ class FirebaseSync:
             "photo_count": student_row["photo_count"],
             "has_rfid": bool(student_row["rfid_uid"]),
             "has_fingerprint": student_row["fingerprint_id"] is not None,
+            "status": student_row["status"],
         })
 
     def delete_student(self, pk):
         self._delete("students", pk)
+
+    # ---------------------------------------------------------- student portal
+    # Keyed by the human-chosen student_id (not the internal pk) and kept
+    # deliberately thin - this is the one doc a student can read without
+    # logging in (see webapp/firestore.rules: get-only, no list), so it
+    # only ever holds this one student's own name/attendance, never RFID
+    # UIDs, fingerprint slots, or anything about other students.
+    def push_student_stats(self, student_row, attendance_rows):
+        records = [
+            {
+                "session_id": a["session_id"],
+                "session_name": a["session_name"],
+                "timestamp": a["timestamp"],
+                "method": a["method"],
+            }
+            for a in attendance_rows
+        ][:100]
+        self._set("student_stats", student_row["student_id"], {
+            "student_id": student_row["student_id"],
+            "name": student_row["name"],
+            "total_present": len(attendance_rows),
+            "records": records,
+        })
+
+    def delete_student_stats(self, student_id):
+        self._delete("student_stats", student_id)
 
     # -------------------------------------------------------------- sessions
     def push_session(self, session_row):

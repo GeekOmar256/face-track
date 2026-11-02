@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BioAttendance - Admin</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#2563eb">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>BioAttendance - Admin</h1>
+  <div>
+    <a href="index.html" style="color:white;text-decoration:none;font-size:0.85rem;margin-right:10px;">&larr; Back</a>
+    <button id="logout-btn" class="btn btn-secondary" style="display:none;">Log out</button>
+  </div>
+</header>
+<div class="page">
+
+  <div id="login-card" class="card center-card">
+    <h2>Admin sign-in</h2>
+    <form id="login-form">
+      <label for="login-email">Email</label>
+      <input type="email" id="login-email" autocomplete="username" required>
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" autocomplete="current-password" required>
+      <button type="submit" class="btn btn-primary">Sign in</button>
+    </form>
+    <div id="login-status" class="status-msg"></div>
+  </div>
+
+  <div id="dashboard" style="display:none;">
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="students">Students</button>
+      <button class="tab-btn" data-tab="add">Add Student</button>
+      <button class="tab-btn" data-tab="session">Session</button>
+      <button class="tab-btn" data-tab="history">History</button>
+    </div>
+
+    <!-- Students -->
+    <div class="tab-panel active" id="tab-students">
+      <div class="card">
+        <h2>Students</h2>
+        <table>
+          <thead><tr><th>ID</th><th>Name</th><th>Status</th><th></th></tr></thead>
+          <tbody id="students-body"></tbody>
+        </table>
+        <div id="students-status" class="status-msg"></div>
+      </div>
+    </div>
+
+    <!-- Add student -->
+    <div class="tab-panel" id="tab-add">
+      <div class="card">
+        <h2>Pre-register a student</h2>
+        <div class="hint">
+          This creates the student record remotely. A photo (and optionally
+          fingerprint/RFID) still has to be captured in person at the
+          attendance station - the student will show up there under
+          "Pending remote enrollments" until that's done.
+        </div>
+        <form id="add-student-form">
+          <label for="new-student-id">Student ID</label>
+          <input type="text" id="new-student-id" required>
+          <label for="new-student-name">Full Name</label>
+          <input type="text" id="new-student-name" required>
+          <button type="submit" class="btn btn-primary">Register</button>
+        </form>
+        <div id="add-student-status" class="status-msg"></div>
+      </div>
+    </div>
+
+    <!-- Session -->
+    <div class="tab-panel" id="tab-session">
+      <div class="card">
+        <h2>Attendance session</h2>
+        <div class="hint">Starts the camera/RFID/fingerprint session on the Pi remotely. There's no live video here - check in happens at the physical station.</div>
+        <button id="start-session-btn" class="btn btn-primary">Start Session</button>
+        <button id="stop-session-btn" class="btn btn-danger" disabled>Stop Session</button>
+        <div id="session-status" class="status-msg"></div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="tab-panel" id="tab-history">
+      <div class="card">
+        <h2>Sessions</h2>
+        <table>
+          <thead><tr><th>Name</th><th>Start</th><th>End</th><th></th></tr></thead>
+          <tbody id="sessions-body"></tbody>
+        </table>
+      </div>
+      <div class="card" id="session-detail-card" style="display:none;">
+        <h2 id="session-detail-title"></h2>
+        <table>
+          <thead><tr><th>Student ID</th><th>Name</th><th>Time</th><th>Method</th></tr></thead>
+          <tbody id="session-detail-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {
+  getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, query, where,
+  orderBy, limit, onSnapshot, serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const methodLabel = { face: 'Face', rfid: 'RFID', fingerprint: 'Fingerprint' };
+
+const loginCard = document.getElementById('login-card');
+const loginForm = document.getElementById('login-form');
+const loginStatus = document.getElementById('login-status');
+const logoutBtn = document.getElementById('logout-btn');
+const dashboard = document.getElementById('dashboard');
+
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  loginStatus.className = 'status-msg';
+  loginStatus.textContent = 'Signing in...';
+  try {
+    await signInWithEmailAndPassword(
+      auth,
+      document.getElementById('login-email').value.trim(),
+      document.getElementById('login-password').value,
+    );
+  } catch (err) {
+    loginStatus.className = 'status-msg error';
+    loginStatus.textContent = 'Sign-in failed: ' + err.message;
+  }
+});
+
+logoutBtn.addEventListener('click', () => signOut(auth));
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    loginCard.style.display = 'block';
+    dashboard.style.display = 'none';
+    logoutBtn.style.display = 'none';
+    return;
+  }
+  const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+  if (!adminSnap.exists()) {
+    loginStatus.className = 'status-msg error';
+    loginStatus.textContent = 'This account is signed in but not set up as an admin. Ask whoever manages the Firebase project to add it.';
+    await signOut(auth);
+    return;
+  }
+  loginCard.style.display = 'none';
+  dashboard.style.display = 'block';
+  logoutBtn.style.display = 'inline-block';
+  loadStudents();
+  loadSessions();
+});
+
+// --------------------------------------------------------------------- tabs
+document.querySelectorAll('.tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === `tab-${btn.dataset.tab}`));
+  });
+});
+
+// ------------------------------------------------------------ command queue
+// Admin actions never write students/sessions/attendance directly - they
+// create a `commands` doc and wait for the Pi to pick it up and resolve
+// it. See webapp/firestore.rules and app/web/firebase_command_worker.py.
+function sendCommand(type, payload, statusEl, onDone) {
+  statusEl.className = 'status-msg pending';
+  statusEl.textContent = 'Sending to the Pi...';
+  let resolved = false;
+
+  addDoc(collection(db, 'commands'), {
+    type, payload, status: 'pending',
+    created_at: serverTimestamp(), created_by: auth.currentUser.uid,
+  }).then((ref) => {
+    const unsub = onSnapshot(ref, (snap) => {
+      const data = snap.data();
+      if (!data || data.status === 'pending') return;
+      resolved = true;
+      unsub();
+      if (data.status === 'done') {
+        statusEl.className = 'status-msg success';
+        statusEl.textContent = 'Done.';
+        if (onDone) onDone(data.result || {});
+      } else {
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = data.error_message || 'The Pi reported an error.';
+      }
+    });
+    setTimeout(() => {
+      if (!resolved) {
+        unsub();
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = 'No response yet - the Pi may be offline. This will still run once it reconnects.';
+      }
+    }, 20000);
+  });
+}
+
+// ------------------------------------------------------------------ students
+const studentsBody = document.getElementById('students-body');
+const studentsStatus = document.getElementById('students-status');
+
+async function loadStudents() {
+  const snap = await getDocs(query(collection(db, 'students'), orderBy('name')));
+  studentsBody.innerHTML = '';
+  snap.forEach((docSnap) => {
+    const s = docSnap.data();
+    const pk = docSnap.id;
+
+    const tr = document.createElement('tr');
+    const tdId = document.createElement('td'); tdId.textContent = s.student_id;
+    const tdName = document.createElement('td'); tdName.textContent = s.name;
+
+    const tdStatus = document.createElement('td');
+    const badge = document.createElement('span');
+    const pending = s.status === 'pending_biometric';
+    badge.className = `badge ${pending ? 'badge-pending' : 'badge-enrolled'}`;
+    badge.textContent = pending ? 'Pending' : 'Enrolled';
+    tdStatus.append(badge);
+
+    const tdActions = document.createElement('td');
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-secondary'; editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', () => editStudent(pk, s.name));
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-danger'; delBtn.textContent = 'Remove';
+    delBtn.addEventListener('click', () => removeStudent(pk, s.name));
+    tdActions.append(editBtn, delBtn);
+
+    tr.append(tdId, tdName, tdStatus, tdActions);
+    studentsBody.append(tr);
+  });
+}
+
+function editStudent(pk, currentName) {
+  const name = prompt('New name:', currentName);
+  if (!name || !name.trim() || name.trim() === currentName) return;
+  sendCommand('update_student', { pk, name: name.trim() }, studentsStatus, () => loadStudents());
+}
+
+function removeStudent(pk, name) {
+  if (!confirm(`Remove ${name}? This deletes their photos and attendance history on the Pi.`)) return;
+  sendCommand('delete_student', { pk }, studentsStatus, () => loadStudents());
+}
+
+// --------------------------------------------------------------- add student
+document.getElementById('add-student-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const studentId = document.getElementById('new-student-id').value.trim();
+  const name = document.getElementById('new-student-name').value.trim();
+  if (!studentId || !name) return;
+  const statusEl = document.getElementById('add-student-status');
+  sendCommand('pre_register_student', { student_id: studentId, name }, statusEl, () => {
+    document.getElementById('add-student-form').reset();
+    loadStudents();
+  });
+});
+
+// -------------------------------------------------------------------- session
+const startSessionBtn = document.getElementById('start-session-btn');
+const stopSessionBtn = document.getElementById('stop-session-btn');
+const sessionStatus = document.getElementById('session-status');
+
+startSessionBtn.addEventListener('click', () => {
+  sendCommand('start_session', {}, sessionStatus, (result) => {
+    sessionStatus.textContent = `Session #${result.session_id} started.`;
+    startSessionBtn.disabled = true;
+    stopSessionBtn.disabled = false;
+  });
+});
+
+stopSessionBtn.addEventListener('click', () => {
+  sendCommand('stop_session', {}, sessionStatus, (result) => {
+    sessionStatus.textContent = `Session stopped - ${result.present_count} present.`;
+    startSessionBtn.disabled = false;
+    stopSessionBtn.disabled = true;
+    loadSessions();
+  });
+});
+
+// -------------------------------------------------------------------- history
+const sessionsBody = document.getElementById('sessions-body');
+const sessionDetailCard = document.getElementById('session-detail-card');
+const sessionDetailTitle = document.getElementById('session-detail-title');
+const sessionDetailBody = document.getElementById('session-detail-body');
+
+async function loadSessions() {
+  const snap = await getDocs(query(collection(db, 'sessions'), orderBy('start_time', 'desc'), limit(50)));
+  sessionsBody.innerHTML = '';
+  snap.forEach((docSnap) => {
+    const s = docSnap.data();
+    const sid = docSnap.id;
+
+    const tr = document.createElement('tr');
+    const tdName = document.createElement('td'); tdName.textContent = s.name || `Session #${sid}`;
+    const tdStart = document.createElement('td'); tdStart.textContent = s.start_time || '';
+    const tdEnd = document.createElement('td'); tdEnd.textContent = s.end_time || 'Active';
+    const tdView = document.createElement('td');
+    const viewBtn = document.createElement('button');
+    viewBtn.className = 'btn btn-secondary'; viewBtn.textContent = 'View';
+    viewBtn.addEventListener('click', () => viewSession(sid, s.name));
+    tdView.append(viewBtn);
+
+    tr.append(tdName, tdStart, tdEnd, tdView);
+    sessionsBody.append(tr);
+  });
+}
+
+async function viewSession(sessionId, name) {
+  sessionDetailTitle.textContent = name || `Session #${sessionId}`;
+  sessionDetailBody.innerHTML = '';
+
+  // Firestore doc IDs are strings; the Pi stores session_id on each
+  // attendance doc as a number, so convert before querying.
+  const snap = await getDocs(
+    query(collection(db, 'attendance'), where('session_id', '==', Number(sessionId))),
+  );
+  const rows = [];
+  snap.forEach((d) => rows.push(d.data()));
+  rows.sort((a, b) => (a.timestamp > b.timestamp ? 1 : -1));
+
+  for (const a of rows) {
+    const tr = document.createElement('tr');
+    const tdId = document.createElement('td'); tdId.textContent = a.student_id;
+    const tdName = document.createElement('td'); tdName.textContent = a.name;
+    const tdTime = document.createElement('td'); tdTime.textContent = a.timestamp;
+    const tdMethod = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = `badge badge-${a.method}`;
+    badge.textContent = methodLabel[a.method] || a.method;
+    tdMethod.append(badge);
+    tr.append(tdId, tdName, tdTime, tdMethod);
+    sessionDetailBody.append(tr);
+  }
+  if (rows.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 4; td.textContent = 'No attendance recorded for this session.';
+    tr.append(td);
+    sessionDetailBody.append(tr);
+  }
+  sessionDetailCard.style.display = 'block';
+}
+</script>
+</body>
+</html>

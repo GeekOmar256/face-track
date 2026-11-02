@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// Security model: this app NEVER writes directly to students/sessions/
+// attendance from the browser. Admin actions only create documents in
+// `commands`, which the Pi (using the Admin SDK, which always bypasses
+// these rules) reads and executes, then marks done/error. This keeps the
+// Pi as the single source of truth and avoids two-way sync races.
+//
+// Students have no password (by design, per project requirements) - they
+// identify themselves with just their student ID. Since that can't be
+// cryptographically verified, `student_stats` is the only collection a
+// signed-out visitor can read, it's keyed by student ID, it only ever
+// holds that one student's own name + attendance (never RFID UIDs or
+// fingerprint slots), and `allow list` is false so the whole roster can't
+// be scraped in one query - a visitor can only fetch one known ID at a
+// time, same as the "just an ID" model already accepts.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    match /students/{pk} {
+      allow get, list: if isAdmin();
+      allow write: if false;
+    }
+
+    match /sessions/{sessionId} {
+      allow get, list: if isAdmin();
+      allow write: if false;
+    }
+
+    match /attendance/{attendanceId} {
+      allow get, list: if isAdmin();
+      allow write: if false;
+    }
+
+    match /commands/{commandId} {
+      allow create: if isAdmin();
+      allow get, list: if isAdmin();
+      allow update, delete: if false; // only the Pi (Admin SDK) updates status
+    }
+
+    match /student_stats/{studentId} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if false; // only the Pi (Admin SDK) writes these
+    }
+
+    match /admins/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow write: if false; // managed manually - see webapp/README.md
+    }
+  }
+}

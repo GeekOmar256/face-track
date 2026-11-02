@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BioAttendance - Student</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#2563eb">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>BioAttendance</h1>
+  <a href="index.html" style="color:white;text-decoration:none;font-size:0.85rem;">&larr; Back</a>
+</header>
+<div class="page">
+
+  <div class="card">
+    <h2>Find my attendance</h2>
+    <div class="hint">Enter the Student ID you were enrolled with.</div>
+    <form id="lookup-form">
+      <label for="student-id">Student ID</label>
+      <input type="text" id="student-id" autocomplete="off" required>
+      <button type="submit" class="btn btn-primary">View My Attendance</button>
+    </form>
+    <div id="lookup-status" class="status-msg"></div>
+  </div>
+
+  <div id="result-card" class="card" style="display:none;">
+    <h2 id="result-name"></h2>
+    <div class="stat-row">
+      <div class="stat-box">
+        <div class="num" id="stat-total">0</div>
+        <div class="label">Sessions Attended</div>
+      </div>
+    </div>
+    <h3>Recent attendance</h3>
+    <table>
+      <thead><tr><th>Date/Time</th><th>Session</th><th>Method</th></tr></thead>
+      <tbody id="records-body"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const form = document.getElementById('lookup-form');
+const idInput = document.getElementById('student-id');
+const status = document.getElementById('lookup-status');
+const resultCard = document.getElementById('result-card');
+const resultName = document.getElementById('result-name');
+const statTotal = document.getElementById('stat-total');
+const recordsBody = document.getElementById('records-body');
+
+const methodLabel = { face: 'Face', rfid: 'RFID', fingerprint: 'Fingerprint' };
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const studentId = idInput.value.trim();
+  if (!studentId) return;
+
+  status.className = 'status-msg';
+  status.textContent = 'Looking up...';
+  resultCard.style.display = 'none';
+
+  try {
+    const snap = await getDoc(doc(db, 'student_stats', studentId));
+    if (!snap.exists()) {
+      status.className = 'status-msg error';
+      status.textContent = 'No attendance record found for that Student ID yet.';
+      return;
+    }
+    const data = snap.data();
+    status.textContent = '';
+    resultName.textContent = data.name || studentId;
+    statTotal.textContent = data.total_present || 0;
+
+    recordsBody.innerHTML = '';
+    const records = (data.records || []).slice().sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+    for (const rec of records) {
+      const tr = document.createElement('tr');
+      const tdTime = document.createElement('td');
+      tdTime.textContent = rec.timestamp || '';
+      const tdSession = document.createElement('td');
+      tdSession.textContent = rec.session_name || rec.session_id || '';
+      const tdMethod = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = `badge badge-${rec.method}`;
+      badge.textContent = methodLabel[rec.method] || rec.method;
+      tdMethod.append(badge);
+      tr.append(tdTime, tdSession, tdMethod);
+      recordsBody.append(tr);
+    }
+    if (records.length === 0) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 3;
+      td.textContent = 'No sessions attended yet.';
+      tr.append(td);
+      recordsBody.append(tr);
+    }
+    resultCard.style.display = 'block';
+  } catch (err) {
+    status.className = 'status-msg error';
+    status.textContent = 'Could not reach the server. Check your connection and try again.';
+  }
+});
+</script>
+</body>
+</html>

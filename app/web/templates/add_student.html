@@ -2,6 +2,25 @@
 {% block content %}
 <h2>Add Student</h2>
 
+{% if pending %}
+<div class="rfid-panel" id="pending-panel">
+  <h3>Pending remote enrollments</h3>
+  <div class="hint">Pre-registered from the web app - still need a photo, fingerprint, or RFID card captured here in person.</div>
+  <table>
+    <thead><tr><th>Student ID</th><th>Name</th><th></th></tr></thead>
+    <tbody>
+      {% for s in pending %}
+      <tr id="pending-row-{{ s.id }}">
+        <td>{{ s.student_id }}</td>
+        <td>{{ s.name }}</td>
+        <td><button type="button" class="btn btn-primary resume-btn" data-pk="{{ s.id }}" data-student-id="{{ s.student_id }}" data-name="{{ s.name }}">Continue Enrollment</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <form id="enroll-form">
   <div class="form-row">
     <label for="student_id">Student ID</label>
@@ -102,6 +121,26 @@ let fingerprintLinked = false;
 function hasCredential() {
   return photoCount >= 1 || rfidLinked || fingerprintLinked;
 }
+
+const pendingPanel = document.getElementById('pending-panel');
+document.querySelectorAll('.resume-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const pk = btn.dataset.pk;
+    const res = await fetch(`/add-student/resume/${pk}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      statusText.textContent = data.error || 'Could not resume this enrollment.';
+      return;
+    }
+    idInput.value = btn.dataset.studentId;
+    nameInput.value = btn.dataset.name;
+    photoCount = data.count;
+    setStage('capturing');
+    showVideo(true);
+    if (pendingPanel) pendingPanel.style.display = 'none';
+    statusText.textContent = `Resuming enrollment for ${btn.dataset.name}. Capture a photo, or link a card/fingerprint, then Finish.`;
+  });
+});
 
 fetch('/rfid/hardware').then(r => r.json()).then(d => {
   if (!d.hardware_available) rfidSimulate.style.display = 'flex';
@@ -209,10 +248,9 @@ finishBtn.addEventListener('click', async () => {
 
 cancelBtn.addEventListener('click', async () => {
   await fetch('/add-student/cancel', { method: 'POST' });
-  statusText.textContent = 'Capture cancelled.';
-  resetUI();
-  idInput.value = '';
-  nameInput.value = '';
+  // Reload so a pending remote enrollment (which cancel keeps, not
+  // deletes) reappears in the "Pending remote enrollments" list above.
+  location.reload();
 });
 
 async function poll() {
