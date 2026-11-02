@@ -6,17 +6,27 @@
 <title>BioAttendance - Student</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#2563eb">
+<meta name="theme-color" content="#070b14">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="topbar">
-  <h1>BioAttendance</h1>
-  <a href="index.html" style="color:white;text-decoration:none;font-size:0.85rem;">&larr; Back</a>
+  <p class="brand">
+    <svg class="brand-mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M24 6c-9.94 0-18 8.06-18 18 0 6 2.5 13 7 17" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M24 16c-4.42 0-8 3.58-8 8 0 4.6 2.2 8.7 5.6 11.3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" opacity="0.5"/>
+      <circle cx="24" cy="24" r="2.8" fill="currentColor"/>
+    </svg>
+    BioAttendance
+  </p>
+  <a href="index.html">&larr; Back</a>
 </header>
 <div class="page">
 
-  <div class="card">
+  <div class="card scan-frame">
     <h2>Find my attendance</h2>
     <div class="hint">Enter the Student ID you were enrolled with.</div>
     <form id="lookup-form">

@@ -6,10 +6,10 @@
 // never be committed or pasted anywhere). Access control here is enforced
 // entirely by firestore.rules, not by hiding this file.
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyA14KwRTHw3wxdU-EOWb0_77TRqthbfvSg",
+  authDomain: "bioattendance-fyp2.firebaseapp.com",
+  projectId: "bioattendance-fyp2",
+  storageBucket: "bioattendance-fyp2.firebasestorage.app",
+  messagingSenderId: "848355176771",
+  appId: "1:848355176771:web:dcccba7601f896bd64bff6",
 };

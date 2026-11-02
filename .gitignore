@@ -6,3 +6,4 @@ data/trainer/
 data/firebase_credentials.json
 PI_DEPLOYMENT_PROMPT.md
 *.csv
+webapp/.firebase/

@@ -6,17 +6,42 @@
 <title>BioAttendance</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#2563eb">
+<meta name="theme-color" content="#070b14">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Manrope:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="topbar"><h1>BioAttendance</h1></header>
 <div class="page">
-  <div class="card center-card">
-    <h2>Welcome</h2>
-    <p class="hint">Choose how you'd like to sign in.</p>
-    <a class="btn btn-primary" style="display:block;text-align:center;" href="admin.html">Admin</a>
-    <a class="btn btn-secondary" style="display:block;text-align:center;" href="student.html">Student</a>
+  <div class="hero">
+    <svg class="logo-mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M24 6c-9.94 0-18 8.06-18 18 0 6 2.5 13 7 17" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M24 10c-7.73 0-14 6.27-14 14 0 5.4 2.3 10.3 6 13.6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity="0.7"/>
+      <path d="M24 16c-4.42 0-8 3.58-8 8 0 4.6 2.2 8.7 5.6 11.3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity="0.45"/>
+      <circle cx="24" cy="24" r="2.6" fill="currentColor"/>
+    </svg>
+    <h1>BioAttendance</h1>
+    <p>Multi-biometric attendance, verified by face, fingerprint or RFID. Choose how you'd like to sign in.</p>
+  </div>
+
+  <div class="role-grid">
+    <a class="role-card" href="admin.html">
+      <svg class="role-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6l7-3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M9 12l2 2 4-4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="role-title">Admin</div>
+      <div class="role-sub">Manage students &amp; sessions</div>
+    </a>
+    <a class="role-card" href="student.html">
+      <svg class="role-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="8" r="3.4" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <div class="role-title">Student</div>
+      <div class="role-sub">Check your own attendance</div>
+    </a>
   </div>
 </div>
 </body>
