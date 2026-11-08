@@ -175,6 +175,74 @@ a **"Simulate"** control (advance the enroll wizard a step; pick a student
 to simulate a match for during a session) so the flow is testable without
 hardware.
 
+## LCD display (16x2, I2C)
+
+A 16x2 character LCD with a PCF8574 I2C backpack (the 4-pin board soldered
+to the back) shows the result of every check-in during a session, so
+students get feedback without looking at the web page.
+
+| Event | Line 1 | Line 2 |
+|---|---|---|
+| No session running | `BioAttendance` | `No session` |
+| Session running, waiting | `Session active` | `Scan to check in` |
+| Attendance recorded | student's name | `Recorded: Face` / `Card` / `Finger` |
+| Already marked this session | student's name | `Already recorded` |
+| Face not recognised for 2 s | `Unknown face` | `Not registered` |
+| Card not linked to anyone | `Unknown card` | `Not registered` |
+| Finger matches no one | `Unknown finger` | `Not registered` |
+| Sensor couldn't read the finger | `Finger not read` | `Please try again` |
+| Session stopped | `Session ended` | `N present` |
+
+Results stay up for 3 seconds, then the display returns to the waiting
+screen. Names are cut to 16 characters; the display's built-in character
+set has no Arabic or accented letters, so accents are dropped, and a name
+with no Latin letters shows the student ID instead.
+
+### Wiring (I2C backpack -> Raspberry Pi 40-pin header)
+
+| Backpack pin | Raspberry Pi pin |
+|---|---|
+| GND | GND - physical pin 14 |
+| VCC | 5V - physical pin 4 |
+| SDA | GPIO2 / SDA - physical pin 3 |
+| SCL | GPIO3 / SCL - physical pin 5 |
+
+None of these pins are used by the RC522, fingerprint sensor or HC-SR04.
+
+Most backpacks pull SDA/SCL up to their own 5V supply, which puts the
+Pi's 3.3V I2C pins slightly over their rated voltage. It usually works,
+but the safe options are an I2C level shifter between the backpack and
+the Pi, or removing the backpack's two pull-up resistors (the Pi has its
+own pull-ups to 3.3V).
+
+### Setup
+
+1. Enable I2C, then reboot:
+   ```bash
+   sudo raspi-config   # Interface Options -> I2C -> Enable
+   sudo reboot
+   ```
+2. Find the display's address (usually `27`, sometimes `3f`):
+   ```bash
+   sudo apt install -y i2c-tools
+   i2cdetect -y 1
+   ```
+   If it isn't `0x27`, set `LCD_I2C_ADDRESS` (e.g. `export LCD_I2C_ADDRESS=0x3F`)
+   before starting the app.
+3. `RPLCD` and `smbus2` are already in `requirements.txt`. Test the display
+   on its own:
+   ```bash
+   python3 -c "from app.lcd import LCDDisplay; d = LCDDisplay(); print(d.hardware_available); d.show('Hello', 'BioAttendance')"
+   ```
+   `True` with blank-looking blocks on the screen means it's working but
+   the contrast is off: turn the small blue potentiometer on the backpack
+   until the text appears. `False` means the address or wiring is wrong.
+
+Without a display attached, `app/lcd.py` falls back to a mock and the
+app runs exactly as before. `UNKNOWN_FACE_SECONDS` in `app/config.py`
+sets how long a face has to stay unrecognised before "Unknown face"
+appears.
+
 ## Firebase sync and the web app (optional)
 
 The Pi can optionally sync with Firebase Firestore so a separate web app
@@ -364,6 +432,10 @@ Edit `app/config.py`:
 - `CAMERA_INDEX`, `FRAME_WIDTH`, `FRAME_HEIGHT` - camera settings.
 - `PROXIMITY_THRESHOLD_CM` - how close (in cm) someone needs to be, per the
   HC-SR04, before face recognition runs during a session (default 100).
+- `UNKNOWN_FACE_SECONDS` - how long a face must stay unrecognised before the
+  LCD shows "Unknown face" (default 2.0). Lower it for quicker feedback;
+  raise it if enrolled students briefly see "Unknown face" before being
+  recognised.
 
 There's no fixed photo count per student - capture as many as you like
 during enrollment (at least one is required). More photos from different
@@ -381,6 +453,7 @@ app/
   rfid.py                     RC522 reader wrapper (mfrc522), mock when no hardware
   fingerprint.py               AS608/R307/FPM10A wrapper (pyfingerprint), mock when no hardware
   ultrasonic.py                HC-SR04 wrapper (RPi.GPIO), mock when no hardware
+  lcd.py                       16x2 I2C LCD wrapper (RPLCD), mock when no hardware
   firebase_sync.py             push to Firestore (students/sessions/attendance/student_stats), no-op when unconfigured
   models/
     face_detection_yunet_2023mar.onnx  bundled YuNet detector weights
@@ -390,6 +463,7 @@ app/
     rfid_worker.py              background RFID polling (enroll scan / session scan)
     fingerprint_worker.py        background fingerprint polling (two-step enroll wizard / session scan)
     ultrasonic_worker.py         background distance polling (session-scoped)
+    lcd_worker.py                LCD messages: result screens that revert to a waiting screen
     firebase_command_worker.py   executes remote commands from the web app (start/stop session, enroll/edit/delete student)
     routes.py                  HTTP routes
     templates/                  Jinja2 pages (dashboard, add student, session, students, history)

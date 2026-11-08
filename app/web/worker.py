@@ -13,10 +13,13 @@ import cv2
 
 from .. import config
 from ..camera import Camera
+from ..lcd import to_lcd_text
 
 IDLE = "idle"
 ENROLL = "enroll"
 SESSION = "session"
+
+LCD_METHOD_LABELS = {"face": "Face", "rfid": "Card", "fingerprint": "Finger"}
 
 
 class CameraWorker:
@@ -47,6 +50,7 @@ class CameraWorker:
         self.session_id = None
         self.marked_pks = set()
         self.session_log = []
+        self._unknown_face_since = None   # when an unrecognised face was first seen, continuously
 
         # optional: set by the app factory. When present, the session loop
         # only runs face recognition while someone is within range.
@@ -57,6 +61,10 @@ class CameraWorker:
         # with real credentials), every new attendance mark is also pushed
         # to Firestore. A no-op FirebaseSync if unconfigured.
         self.firebase = None
+
+        # optional: set by the app factory. The 16x2 LCD that shows each
+        # check-in result (an LCDNotifier; a mock when no display is wired).
+        self.lcd = None
 
     # ------------------------------------------------------------- status
     def status(self):
@@ -198,13 +206,16 @@ class CameraWorker:
             self.marked_pks = set()
             self.session_log = []
             self.last_distance_cm = None
+            self._unknown_face_since = None
             self.mode = SESSION
             try:
                 self._start_thread(self._session_loop)
             except RuntimeError:
                 self.mode = IDLE
                 raise
-            return self.session_id
+        if self.lcd is not None:
+            self.lcd.set_idle("Session active", "Scan to check in")
+        return self.session_id
 
     def stop_session(self):
         with self.state_lock:
@@ -214,12 +225,80 @@ class CameraWorker:
             present = len(self.marked_pks)
             self._stop_thread_locked()
         self.db.end_session(sid)
+        if self.lcd is not None:
+            self.lcd.set_idle("BioAttendance", "No session")
+            self.lcd.show_result("Session ended", f"{present} present")
         return sid, present
 
+    # ------------------------------------------------------------ check-in
+    # Face, RFID and fingerprint all come through check_in(), so every
+    # method marks attendance and reports to the LCD the same way.
+    def check_in(self, student, method):
+        """Mark `student` present and show the result on the LCD. Returns
+        True only when this call newly recorded them."""
+        if self.mode != SESSION:
+            return False
+        name = to_lcd_text(student["name"]) or student["student_id"]
+        if self.mark_present(student["id"], method):
+            self._lcd_result(name, f"Recorded: {LCD_METHOD_LABELS[method]}")
+            return True
+        if student["id"] in self.marked_pks:
+            self._lcd_result(name, "Already recorded")
+        return False
+
+    def handle_card(self, uid):
+        """RFID session callback: called for every card tapped."""
+        if self.mode != SESSION:
+            return
+        student = self.db.get_student_by_rfid(uid)
+        if student is None:
+            self._lcd_result("Unknown card", "Not registered")
+        else:
+            self.check_in(student, "rfid")
+
+    def handle_fingerprint(self, position):
+        """Fingerprint session callback: called with the sensor slot of
+        every matched finger."""
+        if self.mode != SESSION:
+            return
+        student = self.db.get_student_by_fingerprint(position)
+        if student is None:
+            # Matched a template no student is linked to any more.
+            self._lcd_result("Unknown finger", "Not registered")
+        else:
+            self.check_in(student, "fingerprint")
+
+    def handle_unknown_fingerprint(self, unreadable=False):
+        """Fingerprint session callback for a finger that didn't match.
+        `unreadable` means the sensor couldn't get a usable image."""
+        if self.mode != SESSION:
+            return
+        if unreadable:
+            self._lcd_result("Finger not read", "Please try again")
+        else:
+            self._lcd_result("Unknown finger", "Not registered")
+
+    def _note_face_frame(self, faces_seen, any_known, now=None):
+        """Show "Unknown face" only once a face has stayed unrecognised for
+        UNKNOWN_FACE_SECONDS. Recognition misses an enrolled student on
+        some frames, so reacting to a single frame would flash the message
+        at people who are about to be recognised."""
+        if not faces_seen or any_known:
+            self._unknown_face_since = None
+            return
+        now = time.monotonic() if now is None else now
+        if self._unknown_face_since is None:
+            self._unknown_face_since = now
+        elif now - self._unknown_face_since >= config.UNKNOWN_FACE_SECONDS:
+            self._lcd_result("Unknown face", "Not registered")
+
+    def _lcd_result(self, line1, line2):
+        if self.lcd is not None:
+            self.lcd.show_result(line1, line2)
+
     def mark_present(self, pk, method):
-        """Mark a student present in the current session. Shared by the
-        face-recognition loop and the RFID worker's session callback, so
-        either credential writes to the same session log exactly once."""
+        """Mark a student present in the current session, exactly once per
+        session whichever method is used. Callers go through check_in()."""
         if self.mode != SESSION or pk in self.marked_pks:
             return False
         student = self.db.get_student_by_pk(pk)
@@ -317,6 +396,7 @@ class CameraWorker:
             proximity_ok = distance_cm is None or distance_cm <= config.PROXIMITY_THRESHOLD_CM
 
             if not proximity_ok:
+                self._note_face_frame(faces_seen=False, any_known=False)
                 cv2.putText(
                     frame, "Move closer to check in", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2,
@@ -325,6 +405,7 @@ class CameraWorker:
                 continue
 
             faces = self.face_engine.detect_faces(frame)
+            any_known = False
 
             for (x, y, w, h) in faces:
                 label, confidence = self.face_engine.predict(frame[y:y + h, x:x + w])
@@ -338,10 +419,8 @@ class CameraWorker:
                 ):
                     student = self.db.get_student_by_pk(label)
                     if student is not None:
-                        if label in self.marked_pks:
-                            color = (255, 165, 0)
-                            caption = f"{student['name']} (marked)"
-                        elif self.mark_present(label, "face"):
+                        any_known = True
+                        if self.check_in(student, "face"):
                             color = (0, 200, 0)
                             caption = f"{student['name']} - present"
                         else:
@@ -354,4 +433,5 @@ class CameraWorker:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2,
                 )
 
+            self._note_face_frame(faces_seen=len(faces) > 0, any_known=any_known)
             self._publish(frame)

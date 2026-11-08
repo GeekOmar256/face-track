@@ -38,6 +38,7 @@ class FingerprintWorker:
 
         # session state
         self.on_match = None
+        self.on_no_match = None
         self._last_position = None
         self._last_time = 0
 
@@ -70,13 +71,16 @@ class FingerprintWorker:
             self._stop_thread_locked()
 
     # ----------------------------------------------------------- session
-    def start_session_scan(self, on_match):
-        """Continuously call `on_match(position)` for every recognized
-        fingerprint, until stop_session_scan()."""
+    def start_session_scan(self, on_match, on_no_match=None):
+        """Until stop_session_scan(), call `on_match(position)` for every
+        recognized fingerprint and `on_no_match(unreadable)` for a finger
+        that matched nothing (`unreadable` is True when the sensor couldn't
+        get a usable image of it)."""
         with self.lock:
             if self.mode != IDLE:
                 raise RuntimeError("Fingerprint sensor is busy with another operation.")
             self.on_match = on_match
+            self.on_no_match = on_no_match
             self._last_position = None
             self._last_time = 0
             self.mode = SESSION
@@ -88,6 +92,7 @@ class FingerprintWorker:
                 return
             self._stop_thread_locked()
             self.on_match = None
+            self.on_no_match = None
 
     # ------------------------------------------------------- dev fallback
     def simulate_enroll_step(self):
@@ -164,13 +169,17 @@ class FingerprintWorker:
                     self.sensor.convert(1)
                     position, _score = self.sensor.search()
                 except Exception:
-                    position = -1
+                    position = None  # couldn't get a usable image of the finger
 
-                if position is not None and position >= 0:
-                    now = time.time()
-                    if position != self._last_position or now - self._last_time > 1.5:
-                        self._last_position = position
-                        self._last_time = now
+                # Debounced the same way for matches and misses, so a
+                # finger resting on the sensor reports once per 1.5s.
+                now = time.time()
+                if position != self._last_position or now - self._last_time > 1.5:
+                    self._last_position = position
+                    self._last_time = now
+                    if position is not None and position >= 0:
                         if self.on_match:
                             self.on_match(position)
+                    elif self.on_no_match:
+                        self.on_no_match(position is None)
             time.sleep(0.15)

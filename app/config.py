@@ -34,5 +34,10 @@ RECOGNITION_CONFIDENCE_THRESHOLD = 0.6
 # unaffected since a deliberate tap/scan doesn't need proximity gating.
 PROXIMITY_THRESHOLD_CM = 100
 
+# LCD: how long a face must stay unrecognised (seconds) before the LCD shows
+# "Unknown face". Recognition misses enrolled students on some frames, so a
+# shorter value flashes the message at people about to be recognised.
+UNKNOWN_FACE_SECONDS = 2.0
+
 for _dir in (DATA_DIR, DATASET_DIR, TRAINER_DIR):
     os.makedirs(_dir, exist_ok=True)

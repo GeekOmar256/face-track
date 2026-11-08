@@ -76,23 +76,16 @@ class FirebaseCommandWorker:
         if session_row is not None:
             self.firebase.push_session(session_row)
 
-        def on_card(uid):
-            student = self.db.get_student_by_rfid(uid)
-            if student is not None:
-                self.camera_worker.mark_present(student["id"], "rfid")
-
         try:
-            self.rfid_worker.start_session_scan(on_card)
+            self.rfid_worker.start_session_scan(self.camera_worker.handle_card)
         except RuntimeError:
             pass  # reader busy/unavailable - face recognition still works
 
-        def on_fingerprint(position):
-            student = self.db.get_student_by_fingerprint(position)
-            if student is not None:
-                self.camera_worker.mark_present(student["id"], "fingerprint")
-
         try:
-            self.fingerprint_worker.start_session_scan(on_fingerprint)
+            self.fingerprint_worker.start_session_scan(
+                self.camera_worker.handle_fingerprint,
+                self.camera_worker.handle_unknown_fingerprint,
+            )
         except RuntimeError:
             pass  # sensor busy/unavailable - other methods still work
 

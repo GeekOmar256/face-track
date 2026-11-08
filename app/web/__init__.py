@@ -8,6 +8,7 @@ from .rfid_worker import RFIDWorker
 from .fingerprint_worker import FingerprintWorker
 from .ultrasonic_worker import UltrasonicWorker
 from .firebase_command_worker import FirebaseCommandWorker
+from .lcd_worker import LCDNotifier
 from ..firebase_sync import FirebaseSync
 
 
@@ -29,6 +30,8 @@ def create_app(db, face_engine):
     fingerprint_worker = FingerprintWorker()
     camera_worker.ultrasonic_worker = ultrasonic_worker
     camera_worker.firebase = firebase
+    lcd = LCDNotifier()
+    camera_worker.lcd = lcd
 
     # Lets the Firebase admin web app remotely start/stop sessions,
     # pre-register students, and edit/remove students. A no-op unless
@@ -47,6 +50,7 @@ def create_app(db, face_engine):
     app.config["ULTRASONIC_WORKER"] = ultrasonic_worker
     app.config["FIREBASE"] = firebase
     app.config["FIREBASE_COMMANDS"] = command_worker
+    app.config["LCD"] = lcd
 
     from .routes import bp
     app.register_blueprint(bp)
