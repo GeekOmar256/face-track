@@ -1,28 +1,37 @@
 /*
-  Design: a "scanner console" rather than another light SaaS dashboard -
-  deep ink canvas, glowing teal accent (the scan/verify color), monospace
-  for IDs and timestamps, corner-bracket framing on key cards (a
-  viewfinder/scanner motif). Deliberately single-theme (dark) - fits a
-  biometric security product and keeps every surface consistent.
+  Light, colourful theme. Colour carries meaning: each role, admin tab and
+  check-in method has its own hue. Text on filled colours uses the darker
+  -deep shades so it stays readable.
 */
 :root {
-  --bg: #070b14;
-  --surface: #0f1726;
-  --surface-raised: #131f35;
-  --border: #223049;
-  --border-strong: #2d4066;
-  --text: #e8eef8;
-  --muted: #8a99b4;
-  --accent: #2be3cf;
-  --accent-dim: #19a799;
-  --accent-soft: rgba(43, 227, 207, 0.12);
-  --accent-ink: #04201c;
-  --danger: #ff5d6c;
-  --danger-soft: rgba(255, 93, 108, 0.14);
-  --success: #3ddc84;
-  --success-soft: rgba(61, 220, 132, 0.14);
-  --warn: #ffb648;
-  --warn-soft: rgba(255, 182, 72, 0.14);
+  --bg: #f5f7ff;
+  --surface: #ffffff;
+  --surface-tint: #f8f9ff;
+  --border: #e1e6f5;
+  --border-strong: #c9d2ec;
+  --text: #1b2145;
+  --muted: #5a6285;
+
+  --coral: #ff6b5e;
+  --coral-deep: #c93a2e;
+  --coral-soft: #ffe9e6;
+  --sun: #ffbe2e;
+  --sun-deep: #8f5a00;
+  --sun-soft: #fff3d1;
+  --green: #1fbf8f;
+  --green-deep: #0a7a59;
+  --green-soft: #dcf8ee;
+  --blue: #3b82f6;
+  --blue-deep: #1d5fd1;
+  --blue-soft: #e3eeff;
+  --violet: #8b5cf6;
+  --violet-deep: #6a35dc;
+  --violet-soft: #efe8ff;
+  --pink: #ec4899;
+  --pink-deep: #b81f6e;
+  --pink-soft: #fde6f2;
+
+  --rainbow: linear-gradient(90deg, var(--coral), var(--sun), var(--green), var(--blue), var(--violet), var(--pink));
   --font-display: 'Sora', -apple-system, sans-serif;
   --font-body: 'Manrope', -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
@@ -34,32 +43,44 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font-body);
-  background: var(--bg);
-  background-image:
-    radial-gradient(circle at 12% 8%, rgba(43, 227, 207, 0.07), transparent 42%),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0px, transparent 1px, transparent 28px),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0px, transparent 1px, transparent 28px);
   color: var(--text);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(circle at 0% 0%, rgba(255, 107, 94, 0.16), transparent 34%),
+    radial-gradient(circle at 100% 8%, rgba(59, 130, 246, 0.16), transparent 36%),
+    radial-gradient(circle at 92% 100%, rgba(139, 92, 246, 0.14), transparent 38%),
+    radial-gradient(circle at 6% 96%, rgba(31, 191, 143, 0.14), transparent 36%);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }
 
 .page {
   max-width: 760px;
   margin: 0 auto;
-  padding: 18px 16px 48px;
+  padding: 20px 16px 48px;
 }
 
 header.topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
-  background: rgba(10, 15, 26, 0.85);
-  backdrop-filter: blur(6px);
+  gap: 12px;
+  padding: 12px 18px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 20;
+}
+header.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 3px;
+  background: var(--rainbow);
 }
 
 .brand {
@@ -69,266 +90,246 @@ header.topbar {
   margin: 0;
   font-family: var(--font-display);
   font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: 700;
   color: var(--text);
 }
+.brand-mark { width: 28px; height: 28px; flex-shrink: 0; color: var(--violet); }
+.brand-mark path:nth-of-type(1) { stroke: var(--coral); }
+.brand-mark path:nth-of-type(2) { stroke: var(--sun); }
+.brand-mark path:nth-of-type(3) { stroke: var(--blue); }
 
-.brand-mark {
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  color: var(--accent);
-}
-
-header.topbar a, header.topbar .topbar-actions a {
-  color: var(--muted);
+header.topbar a {
+  color: var(--blue-deep);
   text-decoration: none;
-  font-size: 0.82rem;
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
+  font-size: 0.85rem;
+  font-weight: 700;
 }
-header.topbar a:hover { color: var(--accent); }
-
+header.topbar a:hover { text-decoration: underline; }
 .topbar-actions { display: flex; align-items: center; gap: 14px; }
 
 /* --------------------------------------------------------------- surfaces */
 .card {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 16px;
   padding: 20px;
   margin-bottom: 18px;
-  position: relative;
+  box-shadow: 0 6px 20px rgba(59, 72, 140, 0.08);
 }
 
-/* Scanner-viewfinder corner brackets - used on the cards that matter
-   (sign-in, lookup), not decoration spammed everywhere. */
-.scan-frame { position: relative; }
-.scan-frame::before, .scan-frame::after,
-.scan-frame > .corner-tl, .scan-frame > .corner-br {
+/* The two entry cards (sign-in, student lookup) get the rainbow edge. */
+.scan-frame { overflow: hidden; padding-top: 26px; }
+.scan-frame::before {
   content: "";
   position: absolute;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--accent);
-  opacity: 0.8;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: var(--rainbow);
 }
-.scan-frame::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
-.scan-frame::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+/* Each admin section keeps its tab's colour. */
+#tab-students .card { border-top: 4px solid var(--blue); }
+#tab-add .card { border-top: 4px solid var(--green); }
+#tab-session .card { border-top: 4px solid var(--coral); }
+#tab-history .card { border-top: 4px solid var(--violet); }
 
 h2 {
   font-family: var(--font-display);
-  font-size: 1.2rem;
-  font-weight: 600;
-  margin: 0 0 4px;
-  letter-spacing: 0.01em;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+  text-wrap: balance;
 }
 h3 {
   font-family: var(--font-display);
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 600;
   margin: 0 0 8px;
-  color: var(--text);
 }
 
-.hint { color: var(--muted); font-size: 0.84rem; margin-bottom: 14px; line-height: 1.5; }
+.hint { color: var(--muted); font-size: 0.88rem; margin-bottom: 14px; line-height: 1.55; }
 
 label {
   display: block;
-  font-size: 0.72rem;
+  font-size: 0.82rem;
+  font-weight: 700;
   margin-bottom: 5px;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  color: var(--text);
 }
 
 input[type=text], input[type=email], input[type=password] {
   width: 100%;
   padding: 11px 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  background: var(--surface-tint);
+  border: 2px solid var(--border);
+  border-radius: 10px;
   color: var(--text);
   font-size: 1rem;
   font-family: var(--font-body);
   margin-bottom: 14px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 input[type=text]:focus, input[type=email]:focus, input[type=password]:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--blue);
+  background: var(--surface);
 }
 
 /* ---------------------------------------------------------------- buttons */
 .btn {
   display: inline-block;
   padding: 10px 18px;
-  border-radius: 7px;
-  border: 1px solid transparent;
-  font-size: 0.86rem;
-  font-weight: 600;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  font-size: 0.88rem;
+  font-weight: 700;
   font-family: var(--font-body);
-  letter-spacing: 0.01em;
   cursor: pointer;
   margin: 2px 6px 2px 0;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+}
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:focus-visible, .tab-btn:focus-visible, .role-card:focus-visible {
+  outline: 3px solid var(--sun);
+  outline-offset: 2px;
 }
 
-.btn-primary { background: var(--accent); color: var(--accent-ink); }
-.btn-primary:hover { background: var(--accent-dim); }
-.btn-danger { background: transparent; color: var(--danger); border-color: rgba(255, 93, 108, 0.4); }
-.btn-danger:hover { background: var(--danger-soft); }
-.btn-secondary { background: transparent; color: var(--text); border-color: var(--border-strong); }
-.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--blue-deep); color: #ffffff; }
+.btn-primary:hover:not(:disabled) { background: var(--violet-deep); }
+.btn-danger { background: var(--coral-soft); color: var(--coral-deep); }
+.btn-danger:hover:not(:disabled) { background: var(--coral-deep); color: #ffffff; }
+.btn-secondary { background: var(--blue-soft); color: var(--blue-deep); }
+.btn-secondary:hover:not(:disabled) { border-color: var(--blue-deep); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ------------------------------------------------------------------- tabs */
-.tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 18px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--border);
-}
+.tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
 .tab-btn {
-  padding: 10px 6px;
-  margin-right: 18px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
+  --tab: var(--blue-deep);
+  --tab-soft: var(--blue-soft);
+  padding: 9px 16px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--tab-soft);
+  color: var(--tab);
   cursor: pointer;
   font-size: 0.88rem;
   font-family: var(--font-display);
   font-weight: 600;
+  transition: background 0.15s, color 0.15s;
 }
-.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-btn:nth-child(2) { --tab: var(--green-deep); --tab-soft: var(--green-soft); }
+.tab-btn:nth-child(3) { --tab: var(--coral-deep); --tab-soft: var(--coral-soft); }
+.tab-btn:nth-child(4) { --tab: var(--violet-deep); --tab-soft: var(--violet-soft); }
+.tab-btn:hover { border-color: var(--tab); }
+.tab-btn.active { background: var(--tab); color: #ffffff; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
 /* ------------------------------------------------------------------ tables */
-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+.card:has(table) { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
-th {
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.7rem;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
-td:first-child, th:first-child { font-family: var(--font-mono); }
+th { color: var(--muted); font-weight: 700; font-size: 0.76rem; }
+tbody tr:hover { background: var(--surface-tint); }
+tbody tr:last-child td { border-bottom: none; }
+td:first-child { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* ------------------------------------------------------------------ badges */
 .badge {
   display: inline-block;
-  padding: 3px 9px;
-  border-radius: 5px;
-  font-size: 0.68rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
   font-weight: 700;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
-.badge-enrolled { background: var(--success-soft); color: var(--success); }
-.badge-pending { background: var(--warn-soft); color: var(--warn); }
-.badge-face { background: var(--accent-soft); color: var(--accent); }
-.badge-rfid { background: rgba(192, 132, 252, 0.14); color: #c084fc; }
-.badge-fingerprint { background: rgba(96, 165, 250, 0.14); color: #60a5fa; }
+.badge-enrolled { background: var(--green-soft); color: var(--green-deep); }
+.badge-pending { background: var(--sun-soft); color: var(--sun-deep); }
+.badge-face { background: var(--violet-soft); color: var(--violet-deep); }
+.badge-rfid { background: var(--pink-soft); color: var(--pink-deep); }
+.badge-fingerprint { background: var(--blue-soft); color: var(--blue-deep); }
 
 /* -------------------------------------------------------------- status/stat */
-.status-msg { font-size: 0.86rem; margin-top: 10px; min-height: 1.2em; font-family: var(--font-mono); }
-.status-msg.error { color: var(--danger); }
-.status-msg.success { color: var(--success); }
-.status-msg.pending { color: var(--warn); }
+.status-msg { font-size: 0.88rem; font-weight: 600; margin-top: 10px; min-height: 1.2em; }
+.status-msg.error { color: var(--coral-deep); }
+.status-msg.success { color: var(--green-deep); }
+.status-msg.pending { color: var(--sun-deep); }
 
 .stat-row { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .stat-box {
   flex: 1;
   min-width: 120px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: var(--violet-soft);
+  border-radius: 14px;
   padding: 16px 14px;
   text-align: center;
 }
 .stat-box .num {
   font-family: var(--font-display);
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--violet-deep);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.stat-box .label {
-  font-size: 0.68rem;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-top: 6px;
-}
+.stat-box .label { font-size: 0.78rem; font-weight: 700; color: var(--text); margin-top: 6px; }
 
-a.link-btn { color: var(--accent); text-decoration: none; font-size: 0.85rem; }
+a.link-btn { color: var(--blue-deep); text-decoration: none; font-size: 0.85rem; }
 
-.center-card { max-width: 420px; margin: 56px auto 0; }
+.center-card { max-width: 420px; margin: 48px auto 0; }
 
 /* ------------------------------------------------------------------- hero */
-.hero {
-  text-align: center;
-  padding: 36px 8px 28px;
-}
-.hero .logo-mark {
-  width: 56px;
-  height: 56px;
-  color: var(--accent);
-  margin: 0 auto 16px;
-}
+.hero { text-align: center; padding: 36px 8px 28px; }
+.hero .logo-mark { width: 72px; height: 72px; margin: 0 auto 14px; display: block; color: var(--violet); }
+.hero .logo-mark path:nth-of-type(1) { stroke: var(--coral); }
+.hero .logo-mark path:nth-of-type(2) { stroke: var(--sun); }
+.hero .logo-mark path:nth-of-type(3) { stroke: var(--blue); }
 .hero h1 {
   font-family: var(--font-display);
-  font-size: 1.6rem;
+  font-size: 2rem;
   font-weight: 700;
   margin: 0 0 8px;
-  letter-spacing: 0.01em;
 }
 .hero p {
   color: var(--muted);
-  font-size: 0.92rem;
-  max-width: 420px;
+  font-size: 0.98rem;
+  max-width: 440px;
   margin: 0 auto;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
-.role-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
+.role-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .role-card {
   display: block;
   text-decoration: none;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 22px 16px;
+  border-radius: 18px;
+  padding: 26px 16px;
   text-align: center;
-  transition: border-color 0.15s, transform 0.15s;
+  background: var(--blue-deep);
+  box-shadow: 0 10px 24px rgba(29, 95, 209, 0.28);
+  transition: transform 0.15s;
 }
-.role-card:hover { border-color: var(--accent); transform: translateY(-2px); }
-.role-card .role-icon { width: 30px; height: 30px; color: var(--accent); margin: 0 auto 10px; }
-.role-card .role-title {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--text);
+.role-card:nth-child(2) {
+  background: var(--green-deep);
+  box-shadow: 0 10px 24px rgba(10, 122, 89, 0.26);
 }
-.role-card .role-sub { color: var(--muted); font-size: 0.76rem; margin-top: 4px; }
+.role-card:hover { transform: translateY(-3px); }
+.role-card .role-icon { width: 34px; height: 34px; color: #ffffff; margin: 0 auto 10px; display: block; }
+.role-card .role-title { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: #ffffff; }
+.role-card .role-sub { color: #ffffff; font-size: 0.82rem; margin-top: 4px; }
 
 @media (max-width: 480px) {
   .page { padding: 14px 12px 40px; }
   .card { padding: 16px; }
+  .scan-frame { padding-top: 22px; }
   .role-grid { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 1.7rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  .btn:hover:not(:disabled), .role-card:hover { transform: none; }
 }
