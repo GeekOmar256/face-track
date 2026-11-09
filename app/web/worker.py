@@ -52,6 +52,7 @@ class CameraWorker:
         self.session_log = []
         self._unknown_face_since = None   # when an unrecognised face was first seen, continuously
         self._face_shown_at = {}          # student pk -> when their face result was last shown on the LCD
+        self._face_streaks = {}           # student pk -> consecutive frames they were matched in
 
         # optional: set by the app factory. When present, the session loop
         # only runs face recognition while someone is within range.
@@ -209,6 +210,7 @@ class CameraWorker:
             self.last_distance_cm = None
             self._unknown_face_since = None
             self._face_shown_at = {}
+            self._face_streaks = {}
             self.mode = SESSION
             try:
                 self._start_thread(self._session_loop)
@@ -409,6 +411,7 @@ class CameraWorker:
 
             if not proximity_ok:
                 self._note_face_frame(faces_seen=False, any_known=False)
+                self._face_streaks = {}
                 cv2.putText(
                     frame, "Move closer to check in", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2,
@@ -418,21 +421,28 @@ class CameraWorker:
 
             faces = self.face_engine.detect_faces(frame)
             any_known = False
+            streaks = {}
 
             for (x, y, w, h) in faces:
-                label, confidence = self.face_engine.predict(frame[y:y + h, x:x + w])
+                label, dist, runner_up = self.face_engine.predict_ranked(frame[y:y + h, x:x + w])
                 color = (0, 0, 255)
                 caption = "Unknown"
 
-                if (
-                    label is not None
-                    and confidence is not None
-                    and confidence <= config.RECOGNITION_CONFIDENCE_THRESHOLD
-                ):
+                if label is not None and dist is not None and dist <= config.RECOGNITION_CONFIDENCE_THRESHOLD:
+                    # Close enough to *someone*, so not "Unknown face" -
+                    # but only acted on once it's unambiguous and stable.
+                    any_known = True
                     student = self.db.get_student_by_pk(label)
-                    if student is not None:
-                        any_known = True
-                        if self.check_in(student, "face"):
+                    clear_winner = runner_up is None or runner_up - dist >= config.RECOGNITION_MARGIN
+                    if student is None or not clear_winner:
+                        color = (0, 200, 255)
+                        caption = "Not sure - hold still"
+                    else:
+                        streaks[label] = self._face_streaks.get(label, 0) + 1
+                        if streaks[label] < config.FACE_CONFIRM_FRAMES:
+                            color = (0, 200, 255)
+                            caption = f"{student['name']}?"
+                        elif self.check_in(student, "face"):
                             color = (0, 200, 0)
                             caption = f"{student['name']} - present"
                         else:
@@ -445,5 +455,7 @@ class CameraWorker:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2,
                 )
 
+            # A student not matched in this frame starts counting again.
+            self._face_streaks = streaks
             self._note_face_frame(faces_seen=len(faces) > 0, any_known=any_known)
             self._publish(frame)

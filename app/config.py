@@ -29,6 +29,18 @@ DETECTION_SCORE_THRESHOLD = 0.7
 # being recognized.
 RECOGNITION_CONFIDENCE_THRESHOLD = 0.6
 
+# A match must also beat the closest *other* student by at least this much,
+# otherwise the face is treated as undecided. Stops look-alikes (or one
+# person enrolled under two names) being recorded as whichever student
+# happens to be a hair closer on a given frame.
+RECOGNITION_MARGIN = 0.06
+
+# A face must be matched to the same student on this many consecutive
+# frames before they're recorded. A single misrecognised frame can then no
+# longer mark the wrong student present or flash their name on the LCD.
+# Each extra frame adds a little delay on a slow Pi.
+FACE_CONFIRM_FRAMES = 3
+
 # Ultrasonic proximity gate (HC-SR04). Face recognition during a session
 # only runs while someone is within this distance; RFID/fingerprint are
 # unaffected since a deliberate tap/scan doesn't need proximity gating.

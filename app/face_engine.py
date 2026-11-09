@@ -158,3 +158,24 @@ class FaceEngine:
         distances = face_recognition.face_distance(self.known_encodings, enc)
         best_idx = int(np.argmin(distances))
         return self.known_labels[best_idx], float(distances[best_idx])
+
+    def predict_ranked(self, bgr_face):
+        """Like predict(), plus the distance to the closest *other*
+        student: (label, distance, runner_up_distance). The runner-up
+        tells an unambiguous match apart from a face that sits about as
+        close to two students (look-alikes, or one person enrolled under
+        two names). runner_up_distance is None with only one student."""
+        if not self.model_loaded:
+            return None, None, None
+        enc = self._encode(bgr_face)
+        if enc is None:
+            return None, None, None
+        distances = face_recognition.face_distance(self.known_encodings, enc)
+        best_by_label = {}
+        for label, dist in zip(self.known_labels, distances):
+            if label not in best_by_label or dist < best_by_label[label]:
+                best_by_label[label] = float(dist)
+        ranked = sorted(best_by_label.items(), key=lambda item: item[1])
+        label, dist = ranked[0]
+        runner_up = ranked[1][1] if len(ranked) > 1 else None
+        return label, dist, runner_up
