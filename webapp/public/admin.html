@@ -189,7 +189,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 // Admin actions never write students/sessions/attendance directly - they
 // create a `commands` doc and wait for the Pi to pick it up and resolve
 // it. See webapp/firestore.rules and app/web/firebase_command_worker.py.
-function sendCommand(type, payload, statusEl, onDone) {
+function sendCommand(type, payload, statusEl, onDone, onFail) {
   statusEl.className = 'status-msg pending';
   statusEl.textContent = 'Sending to the Pi...';
   let resolved = false;
@@ -210,13 +210,15 @@ function sendCommand(type, payload, statusEl, onDone) {
       } else {
         statusEl.className = 'status-msg error';
         statusEl.textContent = data.error_message || 'The Pi reported an error.';
+        if (onFail) onFail(data);
       }
     });
     setTimeout(() => {
       if (!resolved) {
         unsub();
         statusEl.className = 'status-msg error';
-        statusEl.textContent = 'No response yet - the Pi may be offline. This will still run once it reconnects.';
+        statusEl.textContent = 'No response - the Pi seems to be offline. Check it is on and running, then try again.';
+        if (onFail) onFail(null);
       }
     }, 20000);
   });
@@ -242,6 +244,9 @@ async function loadStudents() {
     const pending = s.status === 'pending_biometric';
     badge.className = `badge ${pending ? 'badge-pending' : 'badge-enrolled'}`;
     badge.textContent = pending ? 'Pending' : 'Enrolled';
+    badge.title = pending
+      ? 'Registered from the web app. Finish enrollment at the Pi: Add Student page -> Pending remote enrollments -> Resume (capture face, and optionally card/fingerprint).'
+      : 'Fully enrolled.';
     tdStatus.append(badge);
 
     const tdActions = document.createElement('td');
@@ -250,7 +255,7 @@ async function loadStudents() {
     editBtn.addEventListener('click', () => editStudent(pk, s.name));
     const delBtn = document.createElement('button');
     delBtn.className = 'btn btn-danger'; delBtn.textContent = 'Remove';
-    delBtn.addEventListener('click', () => removeStudent(pk, s.name));
+    delBtn.addEventListener('click', () => removeStudent(pk, s.name, delBtn, tr));
     tdActions.append(editBtn, delBtn);
 
     tr.append(tdId, tdName, tdStatus, tdActions);
@@ -264,9 +269,14 @@ function editStudent(pk, currentName) {
   sendCommand('update_student', { pk, name: name.trim() }, studentsStatus, () => loadStudents());
 }
 
-function removeStudent(pk, name) {
+function removeStudent(pk, name, btn, row) {
   if (!confirm(`Remove ${name}? This deletes their photos and attendance history on the Pi.`)) return;
-  sendCommand('delete_student', { pk }, studentsStatus, () => loadStudents());
+  // One click, one command: a second click while the Pi is still working
+  // used to send a duplicate that failed with "Student not found."
+  btn.disabled = true;
+  btn.textContent = 'Removing...';
+  row.style.opacity = '0.5';
+  sendCommand('delete_student', { pk }, studentsStatus, () => loadStudents(), () => loadStudents());
 }
 
 // --------------------------------------------------------------- add student
