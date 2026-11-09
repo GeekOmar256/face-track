@@ -51,14 +51,6 @@ const fpSimBtn = document.getElementById('fp-sim-btn');
 let ultrasonicAvailable = false;
 let fpHardwareAvailable = true;
 
-fetch('/ultrasonic/hardware').then(r => r.json()).then(d => {
-  ultrasonicAvailable = d.hardware_available;
-});
-
-fetch('/fingerprint/hardware').then(r => r.json()).then(d => {
-  fpHardwareAvailable = d.hardware_available;
-});
-
 async function loadFingerprintRoster() {
   const res = await fetch('/fingerprint/enrolled');
   const students = await res.json();
@@ -79,27 +71,21 @@ let polling = null;
 let loggedCount = 0;
 let hardwareAvailable = true;
 
-fetch('/rfid/hardware').then(r => r.json()).then(d => {
-  hardwareAvailable = d.hardware_available;
-});
-
 function showVideo(show) {
   videoBox.innerHTML = show
     ? '<img src="/video_feed?t=' + Date.now() + '">'
     : '<span class="video-placeholder">Camera preview will appear here</span>';
 }
 
-startBtn.addEventListener('click', async () => {
-  const res = await fetch('/session/start', { method: 'POST' });
-  const data = await res.json();
-  if (!res.ok) {
-    sessionLabel.textContent = data.error || 'Could not start session.';
-    return;
+// The session can also be started or stopped from the Firebase web app,
+// or have been started before this page was (re)loaded, so the page
+// follows the server's state instead of assuming nothing is running.
+async function enterSessionUI(sessionId, resetLog) {
+  if (resetLog) {
+    logList.innerHTML = '';
+    loggedCount = 0;
   }
-
-  logList.innerHTML = '';
-  loggedCount = 0;
-  sessionLabel.textContent = `Session #${data.session_id} - recording`;
+  sessionLabel.textContent = `Session #${sessionId} - recording`;
   startBtn.disabled = true;
   stopBtn.disabled = false;
   showVideo(true);
@@ -111,13 +97,11 @@ startBtn.addEventListener('click', async () => {
     fpSimulate.style.display = 'flex';
   }
   if (ultrasonicAvailable) distanceIndicator.style.display = 'block';
-  polling = setInterval(poll, 1000);
-});
+  if (!polling) polling = setInterval(poll, 1000);
+}
 
-stopBtn.addEventListener('click', async () => {
-  const res = await fetch('/session/stop', { method: 'POST' });
-  const data = await res.json();
-  sessionLabel.textContent = `Session #${data.session_id} ended - ${data.present_count} present`;
+function leaveSessionUI(label) {
+  sessionLabel.textContent = label;
   startBtn.disabled = false;
   stopBtn.disabled = true;
   showVideo(false);
@@ -127,6 +111,36 @@ stopBtn.addEventListener('click', async () => {
   fpSimulate.style.display = 'none';
   distanceIndicator.style.display = 'none';
   if (polling) { clearInterval(polling); polling = null; }
+}
+
+startBtn.addEventListener('click', async () => {
+  const res = await fetch('/session/start', { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) {
+    sessionLabel.textContent = data.error || 'Could not start session.';
+    return;
+  }
+  enterSessionUI(data.session_id, true);
+});
+
+stopBtn.addEventListener('click', async () => {
+  const res = await fetch('/session/stop', { method: 'POST' });
+  const data = await res.json();
+  leaveSessionUI(`Session #${data.session_id} ended - ${data.present_count} present`);
+});
+
+Promise.all([
+  fetch('/rfid/hardware').then(r => r.json()).then(d => { hardwareAvailable = d.hardware_available; }),
+  fetch('/fingerprint/hardware').then(r => r.json()).then(d => { fpHardwareAvailable = d.hardware_available; }),
+  fetch('/ultrasonic/hardware').then(r => r.json()).then(d => { ultrasonicAvailable = d.hardware_available; }),
+]).catch(() => {}).then(async () => {
+  const s = await (await fetch('/session/status')).json();
+  if (s.mode === 'session') {
+    await enterSessionUI(s.session_id, true);
+    poll();
+  } else if (s.mode === 'enroll') {
+    sessionLabel.textContent = 'A student enrollment is in progress on the Add Student page. Finish or cancel it first.';
+  }
 });
 
 rfidSimBtn.addEventListener('click', async () => {
@@ -151,6 +165,12 @@ fpSimBtn.addEventListener('click', async () => {
 async function poll() {
   const res = await fetch('/session/status');
   const s = await res.json();
+
+  if (s.mode !== 'session') {
+    // Ended somewhere else (e.g. "Stop session" in the Firebase web app).
+    leaveSessionUI('Session ended');
+    return;
+  }
 
   if (ultrasonicAvailable) {
     if (s.distance_cm === null || s.distance_cm === undefined) {
