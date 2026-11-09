@@ -172,6 +172,7 @@ function resetRfidPanel() {
   rfidWaiting.style.display = 'none';
   rfidResult.className = 'rfid-result';
   rfidResult.textContent = '';
+  rfidScanBtn.style.display = 'inline-block';
   rfidCancelBtn.style.display = 'none';
   rfidClearBtn.style.display = 'none';
   if (rfidPolling) { clearInterval(rfidPolling); rfidPolling = null; }
