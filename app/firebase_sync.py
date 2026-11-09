@@ -62,6 +62,25 @@ class FirebaseSync:
         except Exception:
             pass
 
+    # ------------------------------------------------------------ full sync
+    def sync_all(self, db):
+        """Upload everything already in the local database. Students,
+        sessions and attendance are otherwise only pushed when they change,
+        so without this anything created before Firebase was configured (or
+        while the Pi was offline) would never reach the web app. Every write
+        is a merge keyed by the same IDs as the live pushes, so running it
+        on each startup is safe."""
+        if not self.available:
+            return
+        for session_row in db.get_all_sessions():
+            self.push_session(session_row)
+            for a in db.get_attendance_for_session(session_row["id"]):
+                student_row = {"id": a["student_pk"], "student_id": a["student_id"], "name": a["name"]}
+                self.push_attendance(session_row["id"], student_row, a["timestamp"], a["method"])
+        for student_row in db.get_all_students():
+            self.push_student(student_row)
+            self.push_student_stats(student_row, db.get_attendance_for_student(student_row["id"]))
+
     # -------------------------------------------------------------- students
     def push_student(self, student_row):
         self._set("students", student_row["id"], {

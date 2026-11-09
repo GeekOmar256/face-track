@@ -1,5 +1,6 @@
 """Flask app factory for the BioAttendance web interface."""
 import os
+import threading
 
 from flask import Flask
 
@@ -41,6 +42,10 @@ def create_app(db, face_engine):
         fingerprint_worker, ultrasonic_worker,
     )
     command_worker.start()
+
+    # Upload whatever is already in the local database, in the background
+    # so a slow network never delays startup.
+    threading.Thread(target=firebase.sync_all, args=(db,), daemon=True).start()
 
     app.config["DB"] = db
     app.config["FACE_ENGINE"] = face_engine

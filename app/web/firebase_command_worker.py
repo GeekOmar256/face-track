@@ -14,6 +14,11 @@ runs without real credentials.
 """
 import threading
 
+# A command still pending after this long is rejected instead of run: if
+# the Pi was offline when the admin pressed "Start session", starting one
+# hours or days later, whenever the Pi next connects, would be wrong.
+COMMAND_MAX_AGE_SECONDS = 5 * 60
+
 
 class FirebaseCommandWorker:
     def __init__(self, firebase, db, face_engine, camera_worker, rfid_worker,
@@ -44,12 +49,26 @@ class FirebaseCommandWorker:
             if change.type.name not in ("ADDED", "MODIFIED"):
                 continue
             with self._lock:
-                self._handle(change.document)
+                self._handle(change.document, read_time)
 
-    def _handle(self, doc):
+    def _handle(self, doc, read_time=None):
         data = doc.to_dict() or {}
         if data.get("status") != "pending":
             return
+        # Compared against Firestore's server clock (read_time), not the
+        # Pi's, so a Pi with a wrong clock doesn't reject fresh commands.
+        created = data.get("created_at")
+        if created is not None and read_time is not None:
+            try:
+                age = (read_time - created).total_seconds()
+            except TypeError:
+                age = 0
+            if age > COMMAND_MAX_AGE_SECONDS:
+                doc.reference.update({
+                    "status": "error",
+                    "error_message": "Expired: the Pi was offline when this was sent. Please try again.",
+                })
+                return
         try:
             result = self._dispatch(data.get("type"), data.get("payload") or {}) or {}
             doc.reference.update({"status": "done", "result": result})
