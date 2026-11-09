@@ -39,5 +39,12 @@ PROXIMITY_THRESHOLD_CM = 100
 # shorter value flashes the message at people about to be recognised.
 UNKNOWN_FACE_SECONDS = 2.0
 
+# LCD: after a student's face has been reported (recorded / already
+# recorded), stay quiet about that face for this many seconds. Without it,
+# every recorded student in view re-triggers "Already recorded" on every
+# frame and the LCD keeps cycling through their names. Card and fingerprint
+# scans are deliberate and always show a result.
+FACE_REPEAT_SECONDS = 30.0
+
 for _dir in (DATA_DIR, DATASET_DIR, TRAINER_DIR):
     os.makedirs(_dir, exist_ok=True)

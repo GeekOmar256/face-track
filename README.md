@@ -436,6 +436,10 @@ Edit `app/config.py`:
   LCD shows "Unknown face" (default 2.0). Lower it for quicker feedback;
   raise it if enrolled students briefly see "Unknown face" before being
   recognised.
+- `FACE_REPEAT_SECONDS` - after the LCD has shown a student's face result,
+  how long to stay quiet about that same face (default 30). Stops the LCD
+  cycling through the names of already-recorded students who stay in view.
+  Card and fingerprint scans always show a result.
 
 There's no fixed photo count per student - capture as many as you like
 during enrollment (at least one is required). More photos from different

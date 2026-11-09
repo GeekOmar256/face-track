@@ -51,6 +51,7 @@ class CameraWorker:
         self.marked_pks = set()
         self.session_log = []
         self._unknown_face_since = None   # when an unrecognised face was first seen, continuously
+        self._face_shown_at = {}          # student pk -> when their face result was last shown on the LCD
 
         # optional: set by the app factory. When present, the session loop
         # only runs face recognition while someone is within range.
@@ -207,6 +208,7 @@ class CameraWorker:
             self.session_log = []
             self.last_distance_cm = None
             self._unknown_face_since = None
+            self._face_shown_at = {}
             self.mode = SESSION
             try:
                 self._start_thread(self._session_loop)
@@ -239,7 +241,17 @@ class CameraWorker:
         if self.mode != SESSION:
             return False
         name = to_lcd_text(student["name"]) or student["student_id"]
-        if self.mark_present(student["id"], method):
+        newly = self.mark_present(student["id"], method)
+        if method == "face":
+            # The camera reports a face on every frame, so only speak up
+            # about the same student once per FACE_REPEAT_SECONDS.
+            now = time.monotonic()
+            last = self._face_shown_at.get(student["id"])
+            if not newly and last is not None and now - last < config.FACE_REPEAT_SECONDS:
+                return False
+            if newly or student["id"] in self.marked_pks:
+                self._face_shown_at[student["id"]] = now
+        if newly:
             self._lcd_result(name, f"Recorded: {LCD_METHOD_LABELS[method]}")
             return True
         if student["id"] in self.marked_pks:
