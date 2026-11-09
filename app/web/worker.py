@@ -14,6 +14,7 @@ import cv2
 from .. import config
 from ..camera import Camera
 from ..lcd import to_lcd_text
+from .lcd_worker import NO_SESSION_SCREEN, SESSION_SCREEN
 
 IDLE = "idle"
 ENROLL = "enroll"
@@ -218,7 +219,7 @@ class CameraWorker:
                 self.mode = IDLE
                 raise
         if self.lcd is not None:
-            self.lcd.set_idle("Session active", "Scan to check in")
+            self.lcd.set_idle(*SESSION_SCREEN)
         return self.session_id
 
     def stop_session(self):
@@ -230,7 +231,7 @@ class CameraWorker:
             self._stop_thread_locked()
         self.db.end_session(sid)
         if self.lcd is not None:
-            self.lcd.set_idle("BioAttendance", "No session")
+            self.lcd.set_idle(*NO_SESSION_SCREEN)
             self.lcd.show_result("Session ended", f"{present} present")
         return sid, present
 

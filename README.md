@@ -183,7 +183,7 @@ students get feedback without looking at the web page.
 
 | Event | Line 1 | Line 2 |
 |---|---|---|
-| No session running | `BioAttendance` | `No session` |
+| No session running | `No session` | `active` |
 | Session running, waiting | `Session active` | `Scan to check in` |
 | Attendance recorded | student's name | `Recorded: Face` / `Card` / `Finger` |
 | Already marked this session | student's name | `Already recorded` |

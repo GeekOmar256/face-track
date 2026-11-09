@@ -12,13 +12,18 @@ from ..lcd import LCDDisplay, fit
 
 RESULT_HOLD_SECONDS = 3.0
 
+# Resting screens. "No session active" is 17 characters, one too many for a
+# 16-character row, so it's split over the two rows.
+NO_SESSION_SCREEN = ("No session", "active")
+SESSION_SCREEN = ("Session active", "Scan to check in")
+
 
 class LCDNotifier:
     def __init__(self, display=None):
         self.display = display or LCDDisplay()
         self.hardware_available = self.display.hardware_available
         self._lock = threading.Lock()
-        self._idle = ("BioAttendance", "No session")
+        self._idle = NO_SESSION_SCREEN
         self._revert_at = None
         self.display.show(*self._idle)
         threading.Thread(target=self._revert_loop, daemon=True).start()
